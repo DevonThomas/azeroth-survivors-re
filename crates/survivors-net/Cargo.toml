@@ -1,0 +1,16 @@
+[package]
+name = "survivors-net"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Azeroth Survivors' co-op wire protocol over renet (UDP), and the client end of it"
+
+[lints]
+workspace = true
+
+[dependencies]
+survivors-sim = { path = "../survivors-sim" }
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1.1", default-features = false, features = ["use-std"] }
+renet = "2.0"
+renet_netcode = "2.0"

@@ -1,0 +1,29 @@
+[package]
+name = "survivors-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Azeroth Survivors' dedicated co-op server: rooms of up to four, each running the survivors sim at 30 Hz. Needs no game data."
+
+[lints]
+workspace = true
+
+[dependencies]
+survivors-sim = { path = "../survivors-sim" }
+survivors-net = { path = "../survivors-net" }
+renet = "2.0"
+renet_netcode = "2.0"
+clap = { workspace = true, features = ["env"] }
+
+# `cargo run --example missile_speeds -- <WoW Data dir>` regenerates `src/speeds.rs` from the
+# client's Spell.dbc; the server itself reads no game data.
+[dev-dependencies]
+benilla-formats = { path = "../benilla-formats", default-features = false }
+
+[[bin]]
+name = "survivors-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "survivors-bot"
+path = "src/bot.rs"
