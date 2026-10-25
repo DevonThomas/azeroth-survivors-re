@@ -33,8 +33,6 @@ pub(super) struct HudRoot;
 #[derive(Component)]
 pub(super) struct LevelUpRoot;
 #[derive(Component)]
-pub(super) struct PauseRoot;
-#[derive(Component)]
 pub(super) struct OverRoot;
 #[derive(Component)]
 pub(super) struct XpBar;
@@ -161,7 +159,6 @@ pub(super) struct TipBody;
 
 #[derive(Component, Clone, Copy, PartialEq)]
 pub(super) enum UiAction {
-    Resume,
     MainMenu,
     Quit,
 }
@@ -709,49 +706,6 @@ pub(super) fn setup_hud(
             root.spawn(centered(f, "Click a card, or press 1, 2 or 3", 14.0, DIM));
         });
 
-    // --- Pause. ---
-    commands
-        .spawn((
-            PauseRoot,
-            Node {
-                position_type: PositionType::Absolute,
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                row_gap: Val::Px(12.0),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
-            GlobalZIndex(430),
-            Visibility::Hidden,
-            bevy::ui::FocusPolicy::Pass,
-        ))
-        .with_children(|root| {
-            root.spawn(centered(f, "Paused", 46.0, GOLD));
-            for (label, action) in [
-                ("Resume", UiAction::Resume),
-                ("Abandon run", UiAction::MainMenu),
-                ("Quit game", UiAction::Quit),
-            ] {
-                root.spawn((
-                    button(action, BUTTON),
-                    Node {
-                        width: Val::Px(240.0),
-                        justify_content: JustifyContent::Center,
-                        padding: UiRect::axes(Val::Px(20.0), Val::Px(8.0)),
-                        border: UiRect::all(Val::Px(2.0)),
-                        border_radius: BorderRadius::all(Val::Px(4.0)),
-                        ..default()
-                    },
-                ))
-                .with_children(|b| {
-                    b.spawn(text(f, label, 20.0, Color::WHITE));
-                });
-            }
-        });
-
     // --- Results. ---
     commands
         .spawn((
@@ -968,7 +922,6 @@ pub(super) fn buttons(
             Interaction::Pressed => {
                 bg.0 = BUTTON_HOT;
                 match (*action, *phase.get()) {
-                    (UiAction::Resume, Phase::Paused) => next.set(Phase::Playing),
                     (UiAction::MainMenu, Phase::Paused | Phase::GameOver) => next.set(Phase::Menu),
                     (UiAction::Quit, Phase::Paused | Phase::GameOver) => {
                         exit.write(AppExit::Success);
@@ -1003,11 +956,8 @@ pub(super) fn keys(
                 next.set(Phase::Paused);
             }
         }
-        Phase::Paused => {
-            if keys.just_pressed(KeyCode::Escape) {
-                next.set(Phase::Playing);
-            }
-        }
+        // The Escape menu takes its own Escape (`options::keys`).
+        Phase::Paused => {}
         Phase::LevelUp => {}
         Phase::GameOver => {
             if keys.just_pressed(KeyCode::Enter) {
@@ -2127,7 +2077,6 @@ pub(super) fn show_panels(
         Query<(&mut Visibility, &mut Node), With<MenuRoot>>,
         Query<(&mut Visibility, &mut Node), With<HudRoot>>,
         Query<(&mut Visibility, &mut Node), With<LevelUpRoot>>,
-        Query<(&mut Visibility, &mut Node), With<PauseRoot>>,
         Query<(&mut Visibility, &mut Node), With<OverRoot>>,
     )>,
 ) {
@@ -2157,9 +2106,6 @@ pub(super) fn show_panels(
         set(root, p == Phase::LevelUp);
     }
     for root in &mut roots.p3() {
-        set(root, p == Phase::Paused);
-    }
-    for root in &mut roots.p4() {
         set(root, p == Phase::GameOver);
     }
 }

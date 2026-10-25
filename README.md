@@ -17,7 +17,7 @@ from-scratch WoW 1.12.1 client engine (Rust + [Bevy](https://bevy.org)).**
 > · [Discord](https://discord.gg/UzxaZuSAk)). This repository is a from-source local build of the
 > game, running on the [benilla](#how-its-built) / [wenilla](#how-its-built) engine, for personal use.
 
-Pick a class and a battleground, then survive: WASD to move, your abilities cast themselves,
+Pick a class and a battleground, then survive: move as you would in WoW, your abilities cast themselves,
 enemies swarm in waves, you level up and pick upgrades, and a boss shows up every couple of
 minutes. **No server, no login, no account** — fully offline and self-contained.
 
@@ -41,10 +41,13 @@ minutes. **No server, no login, no account** — fully offline and self-containe
 - **Level-up cards** that deal in, tilt toward the cursor and lift on hover. Their WoW item-quality
   colour says how strong a pick is, and each card lists exactly what changes, like
   `Damage 20 » 26` or `Targets 2 » 3`.
-- **A class movement spell on F** from level 5, aimed at the cursor: Blink, Charge, Sprint, Dash,
-  Fade, Ghost Wolf, Aspect of the Cheetah, Blessing of Freedom, Howl of Terror.
-- **A camera you can free:** locked top-down by default with the hero facing the cursor. **C**
-  unlocks it to swing and tilt, and the wheel zooms from over the shoulder out to 70 yards.
+- **A class movement spell on F** from level 5, cast the way the hero faces: Blink, Charge,
+  Sprint, Dash, Fade, Ghost Wolf, Aspect of the Cheetah, Blessing of Freedom, Howl of Terror.
+- **World of Warcraft's own controls and camera** (1.12's model, rates included): W/S run and
+  backpedal, A/D turn, Q/E strafe, right mouse steers, left mouse looks around, both buttons run,
+  Num Lock autoruns, and the camera swings back behind you as you move.
+- **The classic Escape menu:** Main Menu, Sound Options and Interface Options, drawn from the
+  client's own frames, every setting saved.
 - A light sharpen-and-colour pass over the picture (**G** toggles it).
 
 ## Desktop app and co-op (this fork)
@@ -113,9 +116,10 @@ Run `make` (or `make help`) to list every target.
 
 ## Controls
 
-See [CONTROLS.md](CONTROLS.md). The short version: **WASD** to move, **Space** to jump, **F**
-for your class's movement spell, the **mouse wheel** to zoom, **C** to unlock the camera, **Esc**
-to pause, **1/2/3** to pick a level-up card.
+See [CONTROLS.md](CONTROLS.md). The short version: WoW's — **W/S** run and backpedal, **A/D**
+turn, **Q/E** strafe, **right mouse** to steer, **left mouse** to look around, **Space** to jump,
+**F** for your class's movement spell, the **mouse wheel** to zoom, **Esc** for the menu and its
+options, **1/2/3** to pick a level-up card.
 
 ## The game data (not in this repo)
 

@@ -6,7 +6,6 @@
 use bevy::prelude::*;
 
 use super::coop::Net;
-use super::hero;
 use super::session::Session;
 use super::{Phase, Run};
 
@@ -16,7 +15,6 @@ pub(super) fn cast_mobility(
     keys: Res<ButtonInput<KeyCode>>,
     phase: Res<State<Phase>>,
     run: Res<Run>,
-    aim: Res<hero::AimPoint>,
     mut session: ResMut<Session>,
     mut net: ResMut<Net>,
 ) {
@@ -26,6 +24,7 @@ pub(super) fn cast_mobility(
     if run.mobility().is_none() || run.mobile.cd > 0.0 {
         return;
     }
-    let aim = aim.0.map(survivors_sim::flat);
-    session.cast_mobility(aim, &mut net);
+    // As in WoW, along the facing: a Blink goes its full range straight ahead, a Charge takes the
+    // foe nearest the ground before the hero.
+    session.cast_mobility(None, &mut net);
 }

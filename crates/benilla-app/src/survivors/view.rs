@@ -394,7 +394,13 @@ pub(super) fn sync(
         if tf.translation != pos {
             tf.translation = pos;
         }
-        let rot = Quat::from_rotation_y(yaw);
+        // The body leans off the facing as the teammate strafes, as their own client draws it.
+        let lean = if p.down {
+            0.0
+        } else {
+            crate::creature_anim::strafe_body_offset(p.flags)
+        };
+        let rot = Quat::from_rotation_y(yaw + lean);
         if !tf.rotation.abs_diff_eq(rot, 1e-4) {
             tf.rotation = rot;
         }
@@ -456,7 +462,8 @@ pub(super) fn play_events(
     mut session: ResMut<Session>,
     ids: Res<Ids>,
     world: WorldPoint,
-    mut hero: Query<&mut Transform, With<Hero>>,
+    mut hero: Query<(&mut Transform, &mut Hero)>,
+    mut rig: ResMut<hero::CamRig>,
     mut fx: Fx,
 ) {
     if session.events.is_empty() {
@@ -515,10 +522,14 @@ pub(super) fn play_events(
                 if Some(player) != me {
                     continue;
                 }
-                if let Ok(mut tf) = hero.single_mut() {
+                if let Ok((mut tf, mut hm)) = hero.single_mut() {
                     let at = ground(to);
                     tf.translation = at;
                     tf.rotation = Quat::from_rotation_y(yaw);
+                    // A Charge turns the hero onto its target: the camera turns with him.
+                    rig.yaw = crate::creature_anim::wrap_pi(rig.yaw + (yaw - hm.face));
+                    hm.face = yaw;
+                    hm.model = yaw;
                 }
                 session.seq = session.seq.max(seq);
             }

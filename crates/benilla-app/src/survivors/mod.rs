@@ -13,6 +13,7 @@ mod hud;
 mod menu;
 mod minimap;
 mod mobility;
+mod options;
 mod session;
 mod units;
 mod view;
@@ -45,8 +46,8 @@ impl Plugin for SurvivorsPlugin {
             .init_resource::<Selection>()
             .init_resource::<Run>()
             .init_resource::<hero::CamRig>()
-            .init_resource::<hero::AimPoint>()
             .init_resource::<hud::Offer>()
+            .init_resource::<options::Panels>()
             .init_resource::<cards::PendingPick>()
             .init_resource::<session::Session>()
             .init_resource::<view::Ids>()
@@ -59,7 +60,7 @@ impl Plugin for SurvivorsPlugin {
             .add_systems(
                 Update,
                 (
-                    hero::aim_cursor,
+                    hero::mouse_look,
                     mobility::cast_mobility,
                     hero::drive_hero,
                     hero::place_camera,
@@ -139,11 +140,28 @@ impl Plugin for SurvivorsPlugin {
                     .chain()
                     .after(hud::show_panels),
             )
+            .add_systems(
+                Update,
+                (
+                    options::build,
+                    options::keys,
+                    options::clicks,
+                    options::toggle_checks,
+                    options::drag_sliders,
+                    options::dropdown_clicks,
+                    options::show,
+                    options::hover,
+                    options::refresh,
+                    options::apply_to_camera,
+                )
+                    .chain()
+                    .after(hud::keys),
+            )
             .add_systems(OnEnter(Phase::Playing), unpause)
             .add_systems(OnEnter(Phase::LevelUp), pause)
             .add_systems(OnEnter(Phase::Paused), pause)
             .add_systems(OnEnter(Phase::GameOver), unpause)
-            .add_systems(OnEnter(Phase::Menu), (unpause, reset_run));
+            .add_systems(OnEnter(Phase::Menu), (unpause, reset_run, hero::reset_camera));
         if let Some(auto) = auto::from_env() {
             app.insert_resource(auto)
                 .add_systems(
