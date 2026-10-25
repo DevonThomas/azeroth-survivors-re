@@ -71,6 +71,8 @@ pub struct Run {
     pub kills: u32,
     pub level: u32,
     pub xp: f32,
+    /// The party's experience to the next level.
+    pub xp_next: f32,
     pub hp: f32,
     pub abilities: Vec<Owned>,
     pub passives: Vec<(&'static PassiveDef, u8)>,
@@ -109,6 +111,7 @@ impl Default for Run {
             kills: 0,
             level: 1,
             xp: 0.0,
+            xp_next: data::xp_to_next(1),
             hp: BASE_HP,
             abilities: Vec::new(),
             passives: Vec::new(),

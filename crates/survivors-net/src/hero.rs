@@ -13,6 +13,7 @@ pub struct HeroState {
     pub kills: u32,
     pub level: u32,
     pub xp: f32,
+    pub xp_next: f32,
     pub hp: f32,
     /// `(index into data::ABILITIES, rank, cooldown left)`.
     pub abilities: Vec<(u16, u8, f32)>,
@@ -53,6 +54,7 @@ impl HeroState {
             kills: run.kills,
             level: run.level,
             xp: run.xp,
+            xp_next: run.xp_next,
             hp: run.hp,
             abilities: run
                 .abilities
@@ -110,6 +112,7 @@ impl HeroState {
             kills: self.kills,
             level: self.level,
             xp: self.xp,
+            xp_next: self.xp_next,
             hp: self.hp,
             abilities: self
                 .abilities

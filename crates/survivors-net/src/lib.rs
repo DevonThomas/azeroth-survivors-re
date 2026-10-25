@@ -5,15 +5,14 @@
 //! snapshots and visual events, all superseded by the next. Channel 1 is reliable and ordered:
 //! lobby traffic, card picks, and the events that must land (teleports, banners, revives).
 
+#[cfg(feature = "transport")]
 mod client;
 mod hero;
 
-use std::time::Duration;
-
-use renet::{ChannelConfig, ConnectionConfig, SendType};
 use serde::{Deserialize, Serialize};
 use survivors_sim::{Event, Id, Snapshot, Vec2, Vec3};
 
+#[cfg(feature = "transport")]
 pub use client::{Client, ClientError, Status};
 pub use hero::HeroState;
 
@@ -30,7 +29,10 @@ pub const ROOM_SIZE: usize = survivors_sim::MAX_PLAYERS;
 pub const UNRELIABLE: u8 = 0;
 pub const RELIABLE: u8 = 1;
 
-pub fn connection_config() -> ConnectionConfig {
+#[cfg(feature = "transport")]
+pub fn connection_config() -> renet::ConnectionConfig {
+    use renet::{ChannelConfig, ConnectionConfig, SendType};
+    use std::time::Duration;
     let channels = || {
         vec![
             ChannelConfig {
@@ -164,6 +166,7 @@ pub fn normalize_code(s: &str) -> String {
 }
 
 /// A player name for the netcode user data: at most 32 bytes of UTF-8.
+#[cfg(feature = "transport")]
 pub fn user_data(name: &str) -> [u8; renet_netcode::NETCODE_USER_DATA_BYTES] {
     let mut out = [0u8; renet_netcode::NETCODE_USER_DATA_BYTES];
     let mut n = 0;
@@ -179,6 +182,7 @@ pub fn user_data(name: &str) -> [u8; renet_netcode::NETCODE_USER_DATA_BYTES] {
     out
 }
 
+#[cfg(feature = "transport")]
 pub fn name_from_user_data(data: &[u8; renet_netcode::NETCODE_USER_DATA_BYTES]) -> String {
     let n = usize::from(data[0]).min(32);
     String::from_utf8_lossy(&data[1..1 + n]).into_owned()

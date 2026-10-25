@@ -8,7 +8,7 @@ use bevy::ui::RelativeCursorPosition;
 
 use super::data::{self, Kind};
 use super::hud::{self, Choice, HudFont, Offer, SpellIcon};
-use super::{Phase, Rng, Run};
+use super::{Phase, Run};
 
 /// WoW's item-quality colours (`ITEM_QUALITY_COLORS`).
 pub(super) const COMMON: Color = Color::srgb(1.0, 1.0, 1.0);
@@ -162,6 +162,13 @@ pub(super) struct Rays;
 /// The pending pick: the card bursts, then the choice applies.
 #[derive(Resource, Default)]
 pub(super) struct PendingPick(Option<(usize, f32)>);
+
+impl PendingPick {
+    /// A card is bursting: its choice is not applied yet.
+    pub(super) fn busy(&self) -> bool {
+        self.0.is_some()
+    }
+}
 
 const PICK_SECS: f32 = 0.28;
 
@@ -406,8 +413,8 @@ pub(super) fn animate_cards(
     mut pending: ResMut<PendingPick>,
     mut run: ResMut<Run>,
     mut offer: ResMut<Offer>,
-    mut rng: ResMut<Rng>,
-    mut next: ResMut<NextState<Phase>>,
+    mut session: ResMut<super::session::Session>,
+    mut net: ResMut<super::coop::Net>,
 ) {
     if *phase.get() != Phase::LevelUp {
         pending.0 = None;
@@ -499,7 +506,7 @@ pub(super) fn animate_cards(
         if *t >= PICK_SECS {
             let i = *i;
             pending.0 = None;
-            hud::pick(i, &mut run, &mut offer, &mut rng, &mut next);
+            hud::pick(i, &mut run, &mut offer, &mut session, &mut net);
         }
     }
 }

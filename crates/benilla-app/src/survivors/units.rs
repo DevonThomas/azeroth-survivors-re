@@ -5,7 +5,7 @@ use benilla_protocol::messages::{ObjectFields, ObjectType};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-use super::data::Weapon;
+use survivors_sim::data::Weapon;
 use super::RunEntity;
 use crate::combat_text::CombatTextSpawn;
 use crate::creature_anim::{CastEvent, CastEventKind, PlaySeq, SpellGoTargets, SwingMessage};
@@ -144,6 +144,17 @@ pub(super) fn spawn_object(
             RunEntity,
         ))
         .id()
+}
+
+pub(super) fn health(store: &ObjectStore) -> u32 {
+    store.0.unit_health().unwrap_or(100)
+}
+
+/// Back to full health: a revived hero stands up.
+pub(super) fn revive_unit(store: &mut ObjectStore) {
+    store
+        .0
+        .merge(ObjectFields::from_pairs(&[(FIELD_HEALTH, 100)]));
 }
 
 /// Zero health: the animation selector plays Death and holds the corpse pose.

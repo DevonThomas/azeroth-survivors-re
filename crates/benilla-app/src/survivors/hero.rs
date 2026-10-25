@@ -6,10 +6,9 @@ use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 
 use super::data::{self, ClassDef};
-use super::units::{self, flat, wow_to_bevy, yaw_toward, Fx, Marks, UnitSpec};
+use super::units::{self, flat, wow_to_bevy, yaw_toward, Marks, UnitSpec};
 use super::{Phase, Run, Selection};
 use crate::creature_anim::{move_flags, MovementState};
-use crate::net::{FieldChanged, Guid, ObjectStore};
 
 #[derive(Component)]
 pub(super) struct Hero {
@@ -125,6 +124,21 @@ pub(super) fn spawn_hero(
     commands
         .entity(e)
         .insert((Hero { vy: 0.0, air: 0.0 }, Marks::buffs()));
+    e
+}
+
+/// Another player's hero: the same body, driven by the snapshots instead of the keyboard.
+pub(super) fn spawn_teammate(
+    commands: &mut Commands,
+    class: &'static ClassDef,
+    display: u32,
+    race: u8,
+    sex: u8,
+    serial: u64,
+    pos: Vec3,
+) -> Entity {
+    let e = spawn_hero(commands, class, display, race, sex, serial, pos);
+    commands.entity(e).remove::<Hero>();
     e
 }
 
@@ -381,95 +395,6 @@ pub(super) fn place_camera(
     }
 }
 
-/// Damage the hero takes from one blow, after immunity, armour and the shield; returns what got
-/// through.
-pub(super) fn hurt_hero(run: &mut Run, raw: f32) -> f32 {
-    if run.immune_t > 0.0 || run.dead_t.is_some() {
-        return 0.0;
-    }
-    let mut dmg = (raw - run.stats().armor).max(1.0);
-    if run.shield_t > 0.0 && run.shield > 0.0 {
-        let absorbed = dmg.min(run.shield);
-        run.shield -= absorbed;
-        dmg -= absorbed;
-    }
-    run.hp -= dmg;
-    dmg
-}
-
-/// The clock, regeneration, the timed buffs and their visuals, death and victory.
-pub(super) fn hero_vitals(
-    time: Res<Time>,
-    mut run: ResMut<Run>,
-    mut next: ResMut<NextState<Phase>>,
-    mut hero: Query<(Entity, &Guid, &mut ObjectStore, &mut Marks), With<Hero>>,
-    mut fields: MessageWriter<FieldChanged>,
-    mut fx: Fx,
-) {
-    let dt = time.delta_secs();
-    let stats = run.stats();
-    let Ok((entity, guid, mut store, mut marks)) = hero.single_mut() else {
-        return;
-    };
-    if let Some(t) = run.dead_t.as_mut() {
-        *t += dt;
-        if *t > 3.0 {
-            next.set(Phase::GameOver);
-        }
-        return;
-    }
-    run.elapsed += dt;
-    let r = &mut *run;
-    for t in [&mut r.shield_t, &mut r.immune_t, &mut r.thorns_t] {
-        *t = (*t - dt).max(0.0);
-    }
-    let mut heal = stats.regen * dt;
-    if run.heal_t > 0.0 {
-        heal += run.heal_rate * dt.min(run.heal_t);
-        run.heal_t = (run.heal_t - dt).max(0.0);
-    }
-    run.hp = (run.hp + heal).min(stats.max_hp);
-
-    // The buffs show as their own state kits: the shield bubble, the immunity glow, the orbs.
-    let mut shown: Vec<u32> = Vec::new();
-    if run.shield_t > 0.0 && run.shield > 0.0 {
-        shown.push(17);
-    }
-    if run.immune_t > 0.0 {
-        shown.push(642);
-    }
-    if run.thorns_t > 0.0 {
-        shown.push(run.thorns_spell);
-    }
-    if run.heal_t > 0.0 {
-        shown.push(774);
-    }
-    for owned in &run.abilities {
-        if owned.def.key == "lightning_shield" {
-            shown.push(owned.def.spell);
-        }
-    }
-    if run.passives.iter().any(|(p, _)| p.key == "renew") {
-        shown.push(139);
-    }
-    marks.set(&shown);
-    marks.flush(entity, guid.0, &mut store, &mut fields);
-
-    if run.hp <= 0.0 {
-        run.hp = 0.0;
-        run.dead_t = Some(0.0);
-        units::kill_unit(&mut store);
-        marks.clear();
-        marks.flush(entity, guid.0, &mut store, &mut fields);
-    } else if run.elapsed >= data::VICTORY_SECS {
-        run.won = true;
-        // A last flourish before the results.
-        fx.cast(entity, 642, &[entity], None);
-        next.set(Phase::GameOver);
-    }
-}
-
-/// The ground-plane distance from the hero, the measure every range in the mode uses.
 /// The movement flags for running `dir` while facing `look`: forward, backpedal or strafe, by
 /// which quarter the run falls in, so the walk, backpedal and strafe animations play.
 fn gait(look: Vec3, dir: Vec3) -> u32 {
@@ -486,8 +411,4 @@ fn gait(look: Vec3, dir: Vec3) -> u32 {
     } else {
         move_flags::STRAFE_RIGHT
     }
-}
-
-pub(super) fn reach(hero: Vec3, other: Vec3) -> f32 {
-    flat(other - hero).length()
 }

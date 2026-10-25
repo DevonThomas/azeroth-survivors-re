@@ -418,6 +418,7 @@ impl Sim {
         run.elapsed = self.elapsed;
         run.level = self.level;
         run.xp = self.xp;
+        run.xp_next = self.xp_next();
         run.bosses = self.bosses;
         run.rings = self.rings;
         run.won = self.won;
@@ -1649,7 +1650,8 @@ impl Sim {
                 e.dead_t += dt;
             }
         }
-        self.enemies.retain(|e| e.dead_t < 3.5);
+        // The death plays out, then the client fades the corpse as it leaves the snapshot.
+        self.enemies.retain(|e| e.dead_t < 2.5);
         if self.enemies.len() != before {
             self.reindex();
         }

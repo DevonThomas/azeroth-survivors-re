@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 
-use super::enemies::{Enemy, Gem};
+use super::view::{Enemy, Gem};
 use super::hero::Hero;
 use super::hud::{self, Offer};
 use super::units::flat;
@@ -156,6 +156,8 @@ pub(super) fn drive(
     mut run: ResMut<Run>,
     mut offer: ResMut<Offer>,
     mut rng: ResMut<Rng>,
+    mut session: ResMut<super::session::Session>,
+    mut net: ResMut<super::coop::Net>,
     loading: Res<crate::loading_screen::LoadingScreen>,
     heroes: Query<(), With<Hero>>,
     enemies: Query<&Enemy>,
@@ -179,30 +181,20 @@ pub(super) fn drive(
                 auto.wait = 0.0;
             } else if auto.wait > 2.0 && auto.wait < 3.0 {
                 auto.capture_once(&mut commands, "menu".into());
-            } else if auto.wait > 3.0 && hud::start_run(&mut run, &mut selection) {
+            } else if auto.wait > 3.0 && hud::start_run(&mut run, &mut selection, &mut session) {
                 info!(
                     "survivors auto: run begins as {} at {}",
                     run.class.name,
                     selection.map_def().name
                 );
-                if auto.all {
-                    for key in run.class.pool {
-                        if !run.abilities.iter().any(|o| o.def.key == *key) {
-                            run.abilities.push(super::Owned {
-                                def: data::ability(key),
-                                level: 1,
-                                cd: 0.5,
-                            });
-                        }
+                let me = session.me;
+                if let (Some(sim), Some(me)) = (session.sim_mut(), me) {
+                    if auto.all {
+                        sim.grant_all(me, if auto.late { data::MAX_ABILITY_LEVEL } else { 1 });
                     }
-                }
-                if auto.late {
-                    for o in &mut run.abilities {
-                        o.level = data::MAX_ABILITY_LEVEL;
+                    if auto.late {
+                        sim.skip_to(data::VICTORY_SECS * 2.0 / 3.0);
                     }
-                    run.elapsed = data::VICTORY_SECS * 2.0 / 3.0;
-                    run.bosses = 3;
-                    run.rings = 4;
                 }
                 next.set(Phase::Playing);
                 auto.wait = 0.0;
@@ -216,7 +208,7 @@ pub(super) fn drive(
             if auto.wait > 1.6 {
                 let n = offer.len().max(1);
                 let i = (rng.range(0.0, n as f32) as usize).min(n - 1);
-                hud::pick(i, &mut run, &mut offer, &mut rng, &mut next);
+                hud::pick(i, &mut run, &mut offer, &mut session, &mut net);
                 auto.wait = 0.0;
             }
         }

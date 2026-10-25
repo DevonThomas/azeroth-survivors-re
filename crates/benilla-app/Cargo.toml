@@ -77,11 +77,17 @@ rtrb = "0.3"
 mint = "0.5"
 # The gossip greeting's weighted draw, re-rolled per open as in the reference.
 rand = "0.8"
+# Survivors: the rules (stepped here for a solo run) and the co-op wire types. The UDP transport is
+# native-only, below.
+survivors-sim = { path = "../survivors-sim" }
+survivors-net = { path = "../survivors-net", default-features = false }
 
 # The EditBox clipboard, on the main thread as NSPasteboard requires; bevy_egui's 3.x. Native-only:
 # arboard has no wasm32 backend (`textinput/clipboard.rs` falls back to no pasteboard there).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = "3"
+# Survivors co-op over UDP to the dedicated server; the browser has no UDP.
+survivors-net = { path = "../survivors-net", features = ["transport"] }
 
 # Wayland clipboard over the standard `wl_data_device`; arboard's speaks `wlr-data-control`,
 # which GNOME does not implement.

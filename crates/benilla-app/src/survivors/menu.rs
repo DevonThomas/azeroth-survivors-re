@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use bevy::ui_render::ui_material::MaterialNode;
 
-use super::hud::{looks_for, rgb, start_run, HudFont, MenuRoot};
+use super::hud::{looks_for, rgb, HudFont, MenuRoot};
 use super::{data, Phase, Rng, Run, Selection};
 use crate::char_select::race_name;
 use crate::glue::art::{class_tc, race_tc, tc_rect, GlueArt, DIM, GOLD, NAME_EDGE};
@@ -527,6 +527,8 @@ pub(super) fn menu_clicks(
     mut selection: ResMut<Selection>,
     mut run: ResMut<Run>,
     mut rng: ResMut<Rng>,
+    mut session: ResMut<super::session::Session>,
+    mut net: ResMut<super::coop::Net>,
     mut next: ResMut<NextState<Phase>>,
 ) {
     if *phase.get() != Phase::Menu {
@@ -556,7 +558,7 @@ pub(super) fn menu_clicks(
             }
         }
         MenuAction::Enter => {
-            if start_run(&mut run, &mut selection) {
+            if super::coop::enter_world(&mut net, &mut session, &mut run, &mut selection) {
                 next.set(Phase::Playing);
             }
         }

@@ -14,7 +14,7 @@ use bevy::window::PrimaryWindow;
 use super::data::{self, AbilityDef, Effect, Kind, PassiveDef, Stat};
 use super::hero::{self, Hero};
 use super::minimap::{self, MiniMap};
-use super::{Owned, Phase, Rng, Run, Selection, Stats};
+use super::{Owned, Phase, Run, Selection, Stats};
 
 const GOLD: Color = Color::srgb(1.0, 0.82, 0.0);
 /// The mobility button's edge, an action button's 36 units.
@@ -170,14 +170,7 @@ pub(super) enum UiAction {
 #[derive(Component)]
 pub(super) struct BaseColor(Color);
 
-#[derive(Clone, Copy)]
-pub(super) enum Choice {
-    NewAbility(&'static AbilityDef),
-    Upgrade(usize),
-    NewPassive(&'static PassiveDef),
-    UpPassive(usize),
-    Heal,
-}
+pub(super) use survivors_sim::Choice;
 
 /// The level-up cards on offer.
 #[derive(Resource, Default)]
@@ -192,6 +185,10 @@ impl Offer {
 
     pub(super) fn choices(&self) -> &[Choice] {
         &self.choices
+    }
+
+    pub(super) fn set(&mut self, choices: Vec<Choice>) {
+        self.choices = choices;
     }
 }
 
@@ -900,111 +897,42 @@ pub(super) fn menu_preview(
     );
 }
 
-pub(super) fn start_run(run: &mut Run, selection: &mut Selection) -> bool {
-    let (Some(class), Some(&(_, race, _))) = (
-        selection.class_def(),
+/// Begin a solo run with the hero and battleground picked; `false` without a full pick.
+pub(super) fn start_run(
+    run: &mut Run,
+    selection: &mut Selection,
+    session: &mut super::session::Session,
+) -> bool {
+    let (Some(class), Some(&(display, race, sex))) = (
+        selection.class,
         selection.look.and_then(|i| selection.looks.get(i)),
     ) else {
         return false;
     };
     // The world goes to the battleground picked; until now it stood in the last one.
     selection.stage = selection.map;
+    session.start_solo(selection.map, class, race, sex, display);
     let next_guid = run.next_guid;
-    *run = Run {
-        class,
-        race,
+    run.0 = survivors_sim::Run {
         next_guid,
-        ..Run::default()
+        ..survivors_sim::Run::start(&data::CLASSES[class], race)
     };
-    run.abilities.push(Owned {
-        def: data::ability(class.start),
-        level: 1,
-        cd: 0.5,
-    });
-    run.hp = run.stats().max_hp;
-    run.version += 1;
     true
 }
 
-fn choices_for(run: &Run, rng: &mut Rng) -> Vec<Choice> {
-    let mut pool: Vec<(Choice, f32)> = Vec::new();
-    for (i, o) in run.abilities.iter().enumerate() {
-        if o.level < data::MAX_ABILITY_LEVEL {
-            pool.push((Choice::Upgrade(i), 1.2));
-        }
-    }
-    if run.abilities.len() < data::MAX_ABILITIES {
-        for key in run.class.pool {
-            if !run.abilities.iter().any(|o| o.def.key == *key) {
-                pool.push((Choice::NewAbility(data::ability(key)), 1.0));
-            }
-        }
-    }
-    for (i, (_, level)) in run.passives.iter().enumerate() {
-        if *level < data::MAX_PASSIVE_LEVEL {
-            pool.push((Choice::UpPassive(i), 0.8));
-        }
-    }
-    if run.passives.len() < data::MAX_PASSIVES {
-        for p in data::PASSIVES {
-            if !run.passives.iter().any(|(q, _)| q.key == p.key) {
-                pool.push((Choice::NewPassive(p), 0.5));
-            }
-        }
-    }
-    let mut out = Vec::with_capacity(3);
-    while out.len() < 3 && !pool.is_empty() {
-        let total: f32 = pool.iter().map(|(_, w)| w).sum();
-        let mut pick = rng.f32() * total;
-        let mut idx = pool.len() - 1;
-        for (i, (_, w)) in pool.iter().enumerate() {
-            if pick < *w {
-                idx = i;
-                break;
-            }
-            pick -= w;
-        }
-        out.push(pool.swap_remove(idx).0);
-    }
-    if out.is_empty() {
-        out.push(Choice::Heal);
-    }
-    out
-}
-
-pub(super) fn roll_offer(run: Res<Run>, mut rng: ResMut<Rng>, mut offer: ResMut<Offer>) {
-    offer.choices = choices_for(&run, &mut rng);
-}
-
+/// Take card `i`: the session applies it (or sends it to the server) and deals the next.
 pub(super) fn pick(
     i: usize,
     run: &mut Run,
     offer: &mut Offer,
-    rng: &mut Rng,
-    next: &mut NextState<Phase>,
+    session: &mut super::session::Session,
+    net: &mut super::coop::Net,
 ) {
-    let Some(&choice) = offer.choices.get(i) else {
+    if i >= offer.choices.len() {
         return;
-    };
-    match choice {
-        Choice::NewAbility(def) => run.abilities.push(Owned {
-            def,
-            level: 1,
-            cd: 0.3,
-        }),
-        Choice::Upgrade(k) => run.abilities[k].level += 1,
-        Choice::NewPassive(p) => run.passives.push((p, 1)),
-        Choice::UpPassive(k) => run.passives[k].1 += 1,
-        Choice::Heal => run.hp = run.stats().max_hp,
     }
-    run.version += 1;
-    run.pending_levels = run.pending_levels.saturating_sub(1);
-    if run.pending_levels > 0 {
-        offer.choices = choices_for(run, rng);
-    } else {
-        offer.choices.clear();
-        next.set(Phase::Playing);
-    }
+    session.choose(i, net, run);
+    offer.choices = session.offer.clone();
 }
 
 pub(super) fn looks_for(
@@ -1057,11 +985,16 @@ pub(super) fn keys(
     phase: Res<State<Phase>>,
     mut selection: ResMut<Selection>,
     mut run: ResMut<Run>,
+    mut session: ResMut<super::session::Session>,
+    mut net: ResMut<super::coop::Net>,
     mut next: ResMut<NextState<Phase>>,
 ) {
     match phase.get() {
         Phase::Menu => {
-            if keys.just_pressed(KeyCode::Enter) && start_run(&mut run, &mut selection) {
+            if keys.just_pressed(KeyCode::Enter)
+                && !net.typing()
+                && super::coop::enter_world(&mut net, &mut session, &mut run, &mut selection)
+            {
                 next.set(Phase::Playing);
             }
         }
@@ -1236,7 +1169,7 @@ pub(super) fn refresh_hud(
     mut sweeps: ResMut<Assets<SweepUiMaterial>>,
     mut last_version: Local<Option<u32>>,
 ) {
-    let need = data::xp_to_next(run.level);
+    let need = run.xp_next.max(1.0);
     if let Ok(mut n) = xp_fill.single_mut() {
         n.width = Val::Percent((run.xp / need * 100.0).clamp(0.0, 100.0));
     }

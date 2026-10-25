@@ -19,7 +19,7 @@ use benilla_formats::{tile_to_world, world_to_tile, MinimapTranslate};
 use benilla_world::world_map::CurrentMap;
 use benilla_world::world_point::WorldPoint;
 
-use super::enemies::Enemy;
+use super::view::Enemy;
 use super::hero::Hero;
 use super::hud::UiArt;
 use super::Run;

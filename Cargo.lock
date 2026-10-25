@@ -638,6 +638,8 @@ dependencies = [
  "serde_json",
  "sha1 0.10.6",
  "smithay-clipboard",
+ "survivors-net",
+ "survivors-sim",
  "symphonia",
  "toml",
  "wasm-bindgen",
