@@ -2071,4 +2071,69 @@ mod tests {
         let per = start.elapsed().as_secs_f64() / 600.0;
         eprintln!("late four-hero step: {:.3} ms", per * 1000.0);
     }
+
+    #[test]
+    fn late_joiner_catches_up_and_leavers_leave_cleanly() {
+        let mut sim = Sim::new(0, 21);
+        let a = sim.add_player("A", 7, 2, 0, 0).unwrap();
+        let b = sim.add_player("B", 3, 1, 0, 0).unwrap();
+        let c = sim.center();
+        let pick_all = |sim: &mut Sim| {
+            while sim.phase() == SimPhase::LevelUp {
+                let ids: Vec<Id> = sim.player_ids().collect();
+                for id in ids {
+                    if !sim.offer_of(id).is_empty() {
+                        sim.choose(id, 0);
+                    }
+                }
+            }
+        };
+        for _ in 0..(90 * 30) {
+            hero_at(&mut sim, a, c);
+            hero_at(&mut sim, b, c + Vec2::new(2.0, 0.0));
+            sim.step(1.0 / 30.0);
+            pick_all(&mut sim);
+        }
+        let level = sim.run_of(a).unwrap().level;
+        assert!(level > 2, "the party should have levelled in 90 s");
+
+        // A third hero drops in: the party's level, and a card for each level missed.
+        let late = sim.add_player("Late", 0, 1, 0, 0).unwrap();
+        assert_eq!(sim.phase(), SimPhase::LevelUp);
+        let mut picks = 0;
+        while !sim.offer_of(late).is_empty() {
+            sim.choose(late, 0);
+            picks += 1;
+        }
+        assert_eq!(picks, level - 1);
+        assert_eq!(sim.run_of(late).unwrap().level, level);
+        assert_eq!(sim.phase(), SimPhase::Playing);
+
+        // The first hero leaves mid-fight: what the others own still points at them.
+        sim.remove_player(a);
+        for _ in 0..(10 * 30) {
+            hero_at(&mut sim, b, c);
+            hero_at(&mut sim, late, c + Vec2::new(1.0, 1.0));
+            sim.step(1.0 / 30.0);
+            pick_all(&mut sim);
+        }
+        assert_eq!(sim.player_count(), 2);
+        assert!(sim.areas.iter().all(|x| x.owner < 2));
+        assert!(sim.totems.iter().all(|x| x.owner < 2));
+        assert!(sim.pending.iter().all(|(_, h)| h.source < 2));
+    }
+
+    #[test]
+    fn a_lone_hero_falls_and_the_run_ends() {
+        let mut sim = Sim::new(0, 9);
+        let id = sim.add_player("Solo", 0, 1, 0, 0).unwrap();
+        sim.players[0].run.hp = 0.0;
+        let c = sim.center();
+        for _ in 0..(4 * 30) {
+            hero_at(&mut sim, id, c);
+            sim.step(1.0 / 30.0);
+        }
+        assert_eq!(sim.phase(), SimPhase::Over);
+        assert!(!sim.snapshot().won);
+    }
 }
