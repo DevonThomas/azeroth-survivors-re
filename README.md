@@ -83,11 +83,12 @@ between the two newest snapshots, so the field is smooth at any frame rate. The 
 WoW data. `survivors-bot` fills rooms with headless players for testing.
 
 **Performance.** Native instead of WebAssembly: multithreaded rendering on Vulkan/DX12, no
-browser in between. On top of that, the horde lives in a spatial grid (separation, targeting,
-splash and areas touch only nearby cells), the view writes a unit's transform only when it
-moved, and the shipping build uses fat LTO. Measured on an RTX 5070 with the late-game crowd
-(`WOW_SURVIVORS_AUTO=mage:late`): main-thread median 7.8 ms against the original native build's
-8.1 ms, and p90 10.2 ms against 11.5 ms.
+browser in between, and a fat-LTO shipping build. On top of that the horde lives in a spatial
+grid (separation, targeting, splash and areas touch only nearby cells), the view writes a unit's
+transform only when it moved, and the minimap, which profiling showed recompositing its whole
+image every frame (~1 ms), redraws at 20 Hz. Against the original's own native build, same
+machine (RTX 5070), same late-game crowd (`WOW_SURVIVORS_AUTO=mage:late`): main thread median
+**7.55 ms vs 8.07 ms**, and the slow frames (p90) **9.2 ms vs 11.5 ms**.
 
 ## Play it
 

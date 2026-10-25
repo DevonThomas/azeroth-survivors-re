@@ -40,6 +40,8 @@ const BLIP_BASIS_PX: f32 = 140.8;
 const DOT_PX: f32 = 8.0;
 /// `ObjectIcons.blp` cell 1 (left, right, top, bottom): a unit passing creature tracking.
 const TRACKED_UNIT_CELL: [f32; 4] = [0.25, 0.5, 0.0, 0.25];
+/// How often the map is recomposited.
+const COMPOSE_HZ: f32 = 20.0;
 /// `ObjectIcons.blp` cell 4, the blue party dot.
 const PARTY_CELL: [f32; 4] = [0.0, 0.25, 0.25, 0.5];
 const ARROW_PX: f32 = 33.6;
@@ -366,10 +368,19 @@ pub(super) fn compose(
     enemies: Query<(&Transform, &Enemy)>,
     mates: Query<&Transform, With<Teammate>>,
     mut images: ResMut<Assets<Image>>,
+    time: Res<Time<Real>>,
+    mut since: Local<f32>,
 ) {
     if *phase.get() == super::Phase::Menu || !map.shown {
         return;
     }
+    // A full CPU recomposite and texture upload: at the frame rate it was the mode's costliest
+    // system (~1 ms a frame with the horde out). Twenty times a second reads the same.
+    *since += time.delta_secs();
+    if *since < 1.0 / COMPOSE_HZ && map.art.is_some() {
+        return;
+    }
+    *since = 0.0;
     let (Some(mut assets), Some(catalog), Some(current)) = (assets, catalog, current) else {
         return;
     };
