@@ -19,7 +19,7 @@ use benilla_formats::{tile_to_world, world_to_tile, MinimapTranslate};
 use benilla_world::world_map::CurrentMap;
 use benilla_world::world_point::WorldPoint;
 
-use super::view::Enemy;
+use super::view::{Enemy, Teammate};
 use super::hero::Hero;
 use super::hud::UiArt;
 use super::Run;
@@ -40,6 +40,8 @@ const BLIP_BASIS_PX: f32 = 140.8;
 const DOT_PX: f32 = 8.0;
 /// `ObjectIcons.blp` cell 1 (left, right, top, bottom): a unit passing creature tracking.
 const TRACKED_UNIT_CELL: [f32; 4] = [0.25, 0.5, 0.0, 0.25];
+/// `ObjectIcons.blp` cell 4, the blue party dot.
+const PARTY_CELL: [f32; 4] = [0.0, 0.25, 0.25, 0.5];
 const ARROW_PX: f32 = 33.6;
 const ARROW_OFFSET_PX: Vec2 = Vec2::new(0.51, -1.73);
 
@@ -362,6 +364,7 @@ pub(super) fn compose(
     phase: Res<State<super::Phase>>,
     hero: Query<&Transform, With<Hero>>,
     enemies: Query<(&Transform, &Enemy)>,
+    mates: Query<&Transform, With<Teammate>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     if *phase.get() == super::Phase::Menu || !map.shown {
@@ -511,6 +514,22 @@ pub(super) fn compose(
             let off = Vec2::new(tf.translation.x - p.x, tf.translation.z - p.z);
             if off.length() > radius {
                 continue;
+            }
+            blit(buf, center + off / yd_per_px, size, |q| {
+                let f = q / size + 0.5;
+                let x = (l + (r - l) * f.x) * icons.w as f32;
+                let y = (t + (b - t) * f.y) * icons.h as f32;
+                Some(icons.sample(x, y))
+            });
+        }
+        // The party over the horde, as the engine minimap draws a party member: blue cell 4 at
+        // 1.3×, held to the rim when out of range so a teammate is never lost.
+        let size = DOT_PX * 1.3 * scale;
+        let [l, r, t, b] = PARTY_CELL;
+        for tf in &mates {
+            let mut off = Vec2::new(tf.translation.x - p.x, tf.translation.z - p.z);
+            if off.length() > radius {
+                off = off.normalize() * radius;
             }
             blit(buf, center + off / yd_per_px, size, |q| {
                 let f = q / size + 0.5;

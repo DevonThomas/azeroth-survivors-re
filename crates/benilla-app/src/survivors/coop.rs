@@ -131,6 +131,22 @@ impl Net {
         let _ = msg;
     }
 
+    /// Quick Play with `pick`: into any public room with space, or a new one.
+    pub fn quick(&mut self, pick: Pick, map: u16) {
+        self.sent_pick = Some(pick.clone());
+        self.request(ClientMsg::Quick { pick, map });
+    }
+
+    pub fn leave_room(&mut self) {
+        self.send(&ClientMsg::Leave);
+        self.lobby = None;
+        self.sent_pick = None;
+    }
+
+    pub fn members(&self) -> usize {
+        self.lobby.as_ref().map_or(0, |l| l.members.len())
+    }
+
     /// Send once connected, connecting first if need be.
     fn request(&mut self, msg: ClientMsg) {
         #[cfg(not(target_arch = "wasm32"))]
@@ -168,7 +184,7 @@ impl Net {
 }
 
 /// The hero picked at the menu, for the room.
-fn pick_of(net: &Net, selection: &Selection) -> Option<Pick> {
+pub(super) fn pick_of(net: &Net, selection: &Selection) -> Option<Pick> {
     let class = selection.class?;
     let &(display, race, sex) = selection.look.and_then(|i| selection.looks.get(i))?;
     Some(Pick {
@@ -633,12 +649,17 @@ pub(super) fn setup_party_frame(
             PartyFrame,
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(14.0),
+                left: Val::Px(10.0),
                 top: Val::Px(150.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(8.0),
+                padding: UiRect::all(Val::Px(6.0)),
+                border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+            BorderColor::all(Color::srgba(0.55, 0.45, 0.25, 0.8)),
+            Visibility::Hidden,
         ))
         .with_children(|col| {
             for i in 0..survivors_net::ROOM_SIZE - 1 {
@@ -689,7 +710,18 @@ pub(super) fn refresh_party_frame(
     mut names: Query<(&PartyName, &mut Text, &mut TextColor), Without<PartyNote>>,
     mut fills: Query<(&PartyFill, &mut Node, &mut BackgroundColor), Without<PartyRow>>,
     mut notes: Query<(&PartyNote, &mut Text), Without<PartyName>>,
+    mut frame: Query<&mut Visibility, With<PartyFrame>>,
 ) {
+    if let Ok(mut vis) = frame.single_mut() {
+        let want = if session.online() && session.latest().is_some_and(|s| s.players.len() > 1) {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if *vis != want {
+            *vis = want;
+        }
+    }
     let mates: Vec<&survivors_sim::PlayerSnap> = session
         .latest()
         .filter(|_| session.online())

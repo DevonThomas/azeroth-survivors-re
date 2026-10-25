@@ -47,6 +47,48 @@ minutes. **No server, no login, no account** — fully offline and self-containe
   unlocks it to swing and tilt, and the wheel zooms from over the shoulder out to 70 yards.
 - A light sharpen-and-colour pass over the picture (**G** toggles it).
 
+## Desktop app and co-op (this fork)
+
+This fork turns the game into a **native Windows desktop app** with **online co-op for up to four
+players** through a dedicated server you host yourself (a $6 DigitalOcean droplet is plenty; see
+[deploy/README.md](deploy/README.md)).
+
+```bash
+make fetch-data                 # the WoW 1.12.1 Data folder, as below
+scripts/package-windows.sh      # → dist/AzerothSurvivors/Azeroth Survivors.exe (+ a Data link)
+```
+
+Or run it straight from the checkout: `WOW_DATA=wow-data/Data cargo run --release -p warcraft-survivors`.
+
+**Co-op.** On the pick screen, set **Server** to your server's address once, then **Host Room**
+and share the four-letter code (friends use **Join Code**), or everyone clicks **Quick Play**.
+The room's leader presses **Enter World** to start for everyone, and friends can drop into a run
+already under way.
+
+- The party shares experience and levels together; each player picks their own cards (the
+  field holds still while anyone is choosing, for at most 25 seconds).
+- A fallen hero is not out: stand beside them for three seconds to revive them at half health.
+  The run ends when the whole party is down.
+- Healers' heals land on the most hurt teammate in range.
+- The horde grows with the party (half again as many enemies per extra hero), bosses toughen
+  for the whole party, and the experience curve scales with it.
+- Teammates show on the minimap and in a party frame with their health, level and state.
+
+**How it works.** The rules live in [`crates/survivors-sim`](crates/survivors-sim), plain Rust
+with no engine. A solo run steps it inside the client; in co-op the server
+([`crates/survivors-server`](crates/survivors-server)) steps it at 30 Hz and streams quantized
+snapshots (≈4.6 KB at the thickest crowd) over UDP ([`crates/survivors-net`](crates/survivors-net),
+renet + netcode). Each client moves its own hero over its own terrain and draws everyone else
+between the two newest snapshots, so the field is smooth at any frame rate. The server needs no
+WoW data. `survivors-bot` fills rooms with headless players for testing.
+
+**Performance.** Native instead of WebAssembly: multithreaded rendering on Vulkan/DX12, no
+browser in between. On top of that, the horde lives in a spatial grid (separation, targeting,
+splash and areas touch only nearby cells), the view writes a unit's transform only when it
+moved, and the shipping build uses fat LTO. Measured on an RTX 5070 with the late-game crowd
+(`WOW_SURVIVORS_AUTO=mage:late`): main-thread median 7.8 ms against the original native build's
+8.1 ms, and p90 10.2 ms against 11.5 ms.
+
 ## Play it
 
 ```bash

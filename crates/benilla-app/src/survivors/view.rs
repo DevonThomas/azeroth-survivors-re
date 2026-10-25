@@ -352,7 +352,14 @@ pub(super) fn sync(
             survivors_sim::flat(p.pos),
             t,
         );
-        let y = before.map_or(p.pos.y, |b| b.pos.y + (p.pos.y - b.pos.y) * t);
+        // On the ground unless mid-jump: this client's own terrain decides, whatever was reported.
+        let reported = before.map_or(p.pos.y, |b| b.pos.y + (p.pos.y - b.pos.y) * t);
+        let floor = ground(flat, reported);
+        let y = if p.flags & move_flags::FALLING != 0 {
+            reported.max(floor)
+        } else {
+            floor
+        };
         let pos = Vec3::new(flat.x, y, flat.y);
         let yaw = before.map_or(p.yaw, |b| lerp_angle(b.yaw, p.yaw, t));
         let entity = match ids.0.get(&p.id) {

@@ -26,6 +26,9 @@ pub(super) struct Auto {
     /// `<class>:late`: the whole pool at its top level, two thirds of the way in, for the crowd at
     /// its thickest.
     late: bool,
+    /// `WOW_SURVIVORS_COOP=<n>`: Quick Play into a co-op room, and start once `n` are in it.
+    coop: Option<usize>,
+    coop_asked: bool,
     frames: u32,
     wait: f32,
     shots: Option<std::path::PathBuf>,
@@ -84,6 +87,10 @@ pub(super) fn from_env() -> Option<Auto> {
         idle,
         all,
         late,
+        coop: std::env::var("WOW_SURVIVORS_COOP")
+            .ok()
+            .and_then(|n| n.trim().parse().ok()),
+        coop_asked: false,
         frames: 0,
         wait: 0.0,
         shots,
@@ -181,6 +188,18 @@ pub(super) fn drive(
                 auto.wait = 0.0;
             } else if auto.wait > 2.0 && auto.wait < 3.0 {
                 auto.capture_once(&mut commands, "menu".into());
+            } else if let Some(party) = auto.coop {
+                if auto.wait > 3.0 && !auto.coop_asked {
+                    if let Some(pick) = super::coop::pick_of(&net, &selection) {
+                        net.quick(pick, selection.map as u16);
+                        auto.coop_asked = true;
+                        info!("survivors auto: quick play, waiting for a party of {party}");
+                    }
+                }
+                if net.members() >= party && net.leader() && auto.wait > 6.0 {
+                    super::coop::enter_world(&mut net, &mut session, &mut run, &mut selection);
+                    auto.wait = 0.0;
+                }
             } else if auto.wait > 3.0 && hud::start_run(&mut run, &mut selection, &mut session) {
                 info!(
                     "survivors auto: run begins as {} at {}",

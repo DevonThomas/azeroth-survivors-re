@@ -18,6 +18,9 @@ struct Args {
     /// Join this room instead of opening one.
     #[arg(long)]
     join: Option<String>,
+    /// Quick Play instead: into any public room (a real client's, say), started by its leader.
+    #[arg(long)]
+    quick: bool,
     #[arg(long, default_value_t = 0)]
     map: u16,
     #[arg(long, default_value_t = 60)]
@@ -120,6 +123,10 @@ fn main() {
                     display: 0,
                 };
                 let msg = match (&args.join, i, &leader_code) {
+                    _ if args.quick => Some(ClientMsg::Quick {
+                        pick,
+                        map: args.map,
+                    }),
                     (Some(code), _, _) => Some(ClientMsg::Join {
                         code: code.clone(),
                         pick,
@@ -157,7 +164,7 @@ fn main() {
             }
             bot.client.flush();
         }
-        if args.join.is_none() && !start_sent && bots[0].members == bots.len() {
+        if args.join.is_none() && !args.quick && !start_sent && bots[0].members == bots.len() {
             bots[0].client.send(&ClientMsg::Start);
             start_sent = true;
         }

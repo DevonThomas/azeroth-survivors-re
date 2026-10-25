@@ -239,7 +239,12 @@ fn reset_run(
     mut session: ResMut<session::Session>,
     mut ids: ResMut<view::Ids>,
     mut selection: ResMut<Selection>,
+    mut net: ResMut<coop::Net>,
 ) {
+    // Out of a co-op run before its end: out of its room too, so the party is not left waiting.
+    if session.online() && !session.over {
+        net.leave_room();
+    }
     for e in &spawned {
         commands.entity(e).despawn();
     }

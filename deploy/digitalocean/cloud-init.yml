@@ -1,0 +1,43 @@
+#cloud-config
+# Azeroth Survivors co-op server on a fresh Ubuntu 24.04 droplet. Paste this into "User data"
+# when creating the droplet (or pass it to `doctl compute droplet create --user-data-file`).
+# On first boot it installs Docker, builds the server image from the repository below and runs
+# it on UDP 7777, restarting on failure and on reboot. The build takes ~5 minutes on a 1 GB
+# droplet; `docker logs -f survivors` shows the server once it is up.
+
+package_update: true
+packages:
+  - docker.io
+  - git
+  - ufw
+
+write_files:
+  - path: /usr/local/sbin/survivors-update
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Pull the latest server source, rebuild the image, and restart the container.
+      set -eu
+      REPO="${REPO:-https://github.com/DevonThomas/azeroth-survivors-re.git}"
+      BRANCH="${BRANCH:-coop-desktop}"
+      if [ -d /opt/survivors/.git ]; then
+        git -C /opt/survivors fetch --depth 1 origin "$BRANCH"
+        git -C /opt/survivors reset --hard FETCH_HEAD
+      else
+        git clone --depth 1 --branch "$BRANCH" "$REPO" /opt/survivors
+      fi
+      docker build -f /opt/survivors/deploy/Dockerfile -t azeroth-survivors-server /opt/survivors
+      docker rm -f survivors 2>/dev/null || true
+      docker run -d --name survivors --restart unless-stopped \
+        -p 7777:7777/udp azeroth-survivors-server
+      docker image prune -f
+
+runcmd:
+  # Builds compile Rust: give a 1 GB droplet some swap so the linker never runs out of memory.
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - systemctl enable --now docker
+  - ufw allow OpenSSH
+  - ufw allow 7777/udp
+  - ufw --force enable
+  - /usr/local/sbin/survivors-update

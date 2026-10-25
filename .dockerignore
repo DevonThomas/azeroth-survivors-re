@@ -1,0 +1,12 @@
+# The server image builds from three small crates; keep the game data, build output and web side
+# out of the context.
+wow-data
+WoW
+target
+**/target
+web
+docs
+reference
+benilla-config
+trace-*.json
+.git

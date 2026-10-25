@@ -1,5 +1,9 @@
 //! The `warcraft-survivors` launcher: the build stamp, handed to the survivors mode.
 
+// The player build is a desktop app: no console window behind the game on Windows. A dev build
+// keeps it, for the log.
+#![cfg_attr(all(windows, not(feature = "dev")), windows_subsystem = "windows")]
+
 use benilla_app::BuildId;
 
 fn main() -> benilla_app::AppExit {
