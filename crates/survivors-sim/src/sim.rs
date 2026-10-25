@@ -593,7 +593,8 @@ impl Sim {
                 jump = Some((held(pos + toward * far), yaw_toward(toward)));
             }
             Move::Charge(yd) => {
-                let mark = cursor.unwrap_or(pos);
+                // Unaimed, the foe nearest the ground ahead of the hero.
+                let mark = cursor.unwrap_or(pos + facing * yd * 0.5);
                 let target = self
                     .enemies
                     .iter_mut()

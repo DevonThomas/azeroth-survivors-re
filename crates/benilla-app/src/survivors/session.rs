@@ -197,16 +197,14 @@ pub(super) fn advance(
         return;
     }
     let Some(me) = session.me else { return };
-    let input = hero.single().ok().map(|(tf, mv, h)| {
-        let fwd = tf.rotation * Vec3::NEG_Z;
-        HeroInput {
-            pos: tf.translation,
-            yaw: survivors_sim::yaw_toward(Vec2::new(fwd.x, fwd.z)),
-            flags: mv.flags,
-            speed: mv.speed,
-            vy: h.vy,
-            seq: session.seq,
-        }
+    // The facing, not the rendered body, which leans off it while strafing.
+    let input = hero.single().ok().map(|(tf, mv, h)| HeroInput {
+        pos: tf.translation,
+        yaw: h.face,
+        flags: mv.flags,
+        speed: mv.speed,
+        vy: h.vy,
+        seq: session.seq,
     });
     let now = real.elapsed_secs_f64();
     let session = &mut *session;
