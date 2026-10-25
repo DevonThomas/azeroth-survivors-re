@@ -227,6 +227,27 @@ impl Rooms {
                     }
                 }
             }
+            ClientMsg::Reroll => {
+                if let Some((room, hero)) = self.hero_of(client) {
+                    if let Some(sim) = &mut room.sim {
+                        sim.reroll(hero);
+                    }
+                }
+            }
+            ClientMsg::Banish { index } => {
+                if let Some((room, hero)) = self.hero_of(client) {
+                    if let Some(sim) = &mut room.sim {
+                        sim.banish(hero, usize::from(index));
+                    }
+                }
+            }
+            ClientMsg::Skip => {
+                if let Some((room, hero)) = self.hero_of(client) {
+                    if let Some(sim) = &mut room.sim {
+                        sim.skip(hero);
+                    }
+                }
+            }
         }
     }
 
@@ -253,7 +274,14 @@ impl Rooms {
         // A run under way: straight in, catching up on the party's levels card by card.
         if let Some(sim) = &mut room.sim {
             let p = &member.pick;
-            member.hero = sim.add_player(&p.name, usize::from(p.class), p.race, p.sex, p.display);
+            member.hero = sim.add_player_with(
+                &p.name,
+                usize::from(p.class),
+                p.race,
+                p.sex,
+                p.display,
+                p.loadout.clamped(),
+            );
             if let Some(you) = member.hero {
                 send(
                     server,
@@ -388,7 +416,14 @@ fn start(server: &mut RenetServer, room: &mut Room, seed: u64) {
     let mut sim = Sim::new(usize::from(room.map), seed);
     for m in &mut room.members {
         let p = &m.pick;
-        m.hero = sim.add_player(&p.name, usize::from(p.class), p.race, p.sex, p.display);
+        m.hero = sim.add_player_with(
+            &p.name,
+            usize::from(p.class),
+            p.race,
+            p.sex,
+            p.display,
+            p.loadout.clamped(),
+        );
     }
     log(format!(
         "room {} started on {} with {}",

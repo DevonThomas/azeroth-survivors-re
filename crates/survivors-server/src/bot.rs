@@ -121,6 +121,7 @@ fn main() {
                     race: 1,
                     sex: 0,
                     display: 0,
+                    loadout: Default::default(),
                 };
                 let msg = match (&args.join, i, &leader_code) {
                     _ if args.quick => Some(ClientMsg::Quick {

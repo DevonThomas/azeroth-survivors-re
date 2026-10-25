@@ -8,6 +8,7 @@
 
 pub mod data;
 mod grid;
+mod loadout;
 mod offer;
 mod rng;
 mod run;
@@ -16,6 +17,7 @@ mod snapshot;
 mod speeds;
 
 pub use glam::{Vec2, Vec3};
+pub use loadout::{Appearance, Loadout, StatBonus, GEAR_SLOTS};
 pub use offer::{choices_for, Choice};
 pub use rng::Rng;
 pub use run::{mobility_for, Mobility, MobilityState, Move, Owned, Run, Stats, LEARN_LEVEL};

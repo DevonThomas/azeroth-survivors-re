@@ -27,6 +27,9 @@ pub struct HeroState {
     /// Mobility: cooldown, haste, haste left, vanish left.
     pub mobile: [f32; 4],
     pub pending_levels: u32,
+    pub gold: u32,
+    pub rerolls: u8,
+    pub banishes: u8,
     pub bosses: u32,
     pub rings: u32,
     pub won: bool,
@@ -90,6 +93,9 @@ impl HeroState {
                 run.mobile.vanish_t,
             ],
             pending_levels: run.pending_levels,
+            gold: run.gold,
+            rerolls: run.rerolls,
+            banishes: run.banishes,
             bosses: run.bosses,
             rings: run.rings,
             won: run.won,
@@ -145,6 +151,10 @@ impl HeroState {
                 vanish_t: self.mobile[3],
             },
             pending_levels: self.pending_levels,
+            gold: self.gold,
+            rerolls: self.rerolls,
+            banishes: self.banishes,
+            loadout: prev.map(|r| r.loadout.clone()).unwrap_or_default(),
             bosses: self.bosses,
             rings: self.rings,
             won: self.won,
@@ -154,6 +164,8 @@ impl HeroState {
             damage_done: self.damage_done,
             version: self.version,
             banner: self.banner.clone(),
+            banned: Vec::new(),
+            second_wind: false,
         }
     }
 

@@ -17,7 +17,7 @@ pub use client::{Client, ClientError, Status};
 pub use hero::HeroState;
 
 /// Bumped on every incompatible change; a mismatch is refused at the handshake.
-pub const PROTOCOL_ID: u64 = 0x415A_5355_0000_0004;
+pub const PROTOCOL_ID: u64 = 0x415A_5355_0000_0005;
 pub const DEFAULT_PORT: u16 = 7777;
 /// The server steps every room this often…
 pub const TICK_HZ: u32 = 30;
@@ -64,6 +64,9 @@ pub struct Pick {
     pub race: u8,
     pub sex: u8,
     pub display: u32,
+    /// What the hero brings from the player's account: gear, talents, perks, look. The server
+    /// clamps it before the run sees it.
+    pub loadout: survivors_sim::Loadout,
 }
 
 /// Where a client's hero is, sent every frame or so on the unreliable channel.
@@ -108,6 +111,10 @@ pub enum ClientMsg {
     Input(InputMsg),
     Mobility { aim: Option<Vec2> },
     Choose { index: u8 },
+    /// Deal a fresh hand (a reroll), banish card `index`, or pass on the hand for gold.
+    Reroll,
+    Banish { index: u8 },
+    Skip,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

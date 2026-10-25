@@ -6,6 +6,7 @@ use glam::{Vec2, Vec3};
 
 use crate::data::{self, AbilityDef, Effect, EnemyDef, Kind};
 use crate::grid::Grid;
+use crate::Loadout;
 use crate::snapshot::{quantize, yaw_byte};
 use crate::{
     choices_for, flat, yaw_toward, AreaSnap, Choice, EnemySnap, Event, GemLook, GemSnap, Id, Move,
@@ -117,6 +118,7 @@ impl Enemy {
 enum GemKind {
     Xp(u32),
     Heal(f32),
+    Gold(u32),
 }
 
 struct Gem {
@@ -314,12 +316,25 @@ impl Sim {
         sex: u8,
         display: u32,
     ) -> Option<Id> {
+        self.add_player_with(name, class, race, sex, display, Loadout::default())
+    }
+
+    /// [`Sim::add_player`] with what the hero brings from the account: gear, talents, perks.
+    pub fn add_player_with(
+        &mut self,
+        name: &str,
+        class: usize,
+        race: u8,
+        sex: u8,
+        display: u32,
+        loadout: Loadout,
+    ) -> Option<Id> {
         if self.players.len() >= MAX_PLAYERS || self.phase == SimPhase::Over {
             return None;
         }
         let id = (1..=MAX_PLAYERS as Id).find(|i| !self.players.iter().any(|p| p.id == *i))?;
         let class = &data::CLASSES[class.min(data::CLASSES.len() - 1)];
-        let mut run = Run::start(class, race);
+        let mut run = Run::start_with(class, race, loadout);
         run.level = self.level;
         run.pending_levels = self.level - 1;
         // Beside the party's first hero standing, or at the centre.
@@ -449,6 +464,56 @@ impl Sim {
             return;
         };
         self.pick(pi, index);
+    }
+
+    /// Deal `id` a fresh hand, if a reroll is left.
+    pub fn reroll(&mut self, id: Id) {
+        let Some(p) = self.players.iter_mut().find(|p| p.id == id) else {
+            return;
+        };
+        if p.offer.is_empty() || p.run.rerolls == 0 {
+            return;
+        }
+        p.run.rerolls -= 1;
+        p.offer = choices_for(&p.run, &mut self.rng);
+        p.offer_t = 0.0;
+    }
+
+    /// Never deal card `index`'s spell or passive again this run, and deal a fresh hand.
+    pub fn banish(&mut self, id: Id, index: usize) {
+        let Some(p) = self.players.iter_mut().find(|p| p.id == id) else {
+            return;
+        };
+        let Some(key) = p.offer.get(index).and_then(|c| c.key()) else {
+            return;
+        };
+        if p.run.banishes == 0 {
+            return;
+        }
+        p.run.banishes -= 1;
+        p.run.banned.push(key);
+        p.offer = choices_for(&p.run, &mut self.rng);
+        p.offer_t = 0.0;
+    }
+
+    /// Pass on the hand for gold, where the loadout allows it.
+    pub fn skip(&mut self, id: Id) {
+        let Some(pi) = self.players.iter().position(|p| p.id == id) else {
+            return;
+        };
+        let level = self.level;
+        let p = &mut self.players[pi];
+        if p.offer.is_empty() || !p.run.loadout.skips {
+            return;
+        }
+        p.run.gold += 10 + 3 * level;
+        p.run.pending_levels = p.run.pending_levels.saturating_sub(1);
+        p.offer.clear();
+        if p.run.pending_levels > 0 {
+            p.offer = choices_for(&p.run, &mut self.rng);
+            p.offer_t = 0.0;
+        }
+        self.update_phase();
     }
 
     fn pick(&mut self, pi: usize, index: usize) {
@@ -1093,14 +1158,14 @@ impl Sim {
             }
             let o = o.clone();
             let def = o.def;
-            let mult = o.damage_mult() * stats.might;
+            let mult = o.damage_mult() * stats.might * self.players[pi].run.spell_damage(def);
             let p = Params {
                 dmg: def.damage * mult,
                 dot: def.dot * mult,
                 count: o.count() as usize,
                 radius: o.radius(&stats),
                 duration: o.duration(),
-                cooldown: o.cooldown(&stats),
+                cooldown: o.cooldown(&stats) * self.players[pi].run.spell_cooldown(def),
             };
             let speed = self.speed_of(def.spell);
             let delay = |f: &Foe| if speed > 0.0 { f.dist / speed } else { 0.0 };
@@ -1639,6 +1704,11 @@ impl Sim {
         }
         if e.boss {
             self.banner = Some((format!("{} is slain!", e.def.name), 3.0));
+            // Each client rolls its own hero's drop from its own tables.
+            self.events.push(Event::BossDown {
+                boss: u32::from(e.kind & !EnemySnap::BOSS),
+                map: self.map as u16,
+            });
         }
     }
 
@@ -1666,6 +1736,24 @@ impl Sim {
                     id,
                     kind: GemKind::Heal(if d.boss { 1000.0 } else { 30.0 }),
                     pos: d.pos + Vec2::new(0.8, 0.0),
+                    to: None,
+                    speed: 6.0,
+                });
+            }
+            // Coins: a boss spills a purse, the horde a coin now and then, richer as the run goes.
+            let coins = if d.boss {
+                40 + 20 * self.bosses
+            } else if self.rng.f32() < 0.06 {
+                1 + (data::progress(self.elapsed) * 4.0) as u32 + d.xp / 6
+            } else {
+                0
+            };
+            if coins > 0 {
+                let id = self.new_id();
+                self.gems.push(Gem {
+                    id,
+                    kind: GemKind::Gold(coins),
+                    pos: d.pos + Vec2::new(-0.6, 0.4),
                     to: None,
                     speed: 6.0,
                 });
@@ -1701,6 +1789,7 @@ impl Sim {
             .collect();
         let mut gained = 0.0;
         let mut heals: Vec<(usize, f32)> = Vec::new();
+        let mut coins = 0u32;
         self.gems.retain_mut(|g| {
             if g.to.is_none_or(|t| t >= heroes.len() || heroes[t].3) {
                 g.to = heroes
@@ -1717,6 +1806,7 @@ impl Sim {
                 match g.kind {
                     GemKind::Xp(xp) => gained += xp as f32 * data::XP_RATE * heroes[t].2,
                     GemKind::Heal(hp) => heals.push((t, hp)),
+                    GemKind::Gold(g) => coins += g,
                 }
                 return false;
             }
@@ -1724,6 +1814,13 @@ impl Sim {
             g.pos += d / dist * (g.speed * dt).min(dist);
             true
         });
+        // Gold is everyone's: each hero banks a picked-up coin's worth, with their own gold bonus.
+        if coins > 0 {
+            for p in &mut self.players {
+                let bonus = 1.0 + p.run.loadout.stats.gold;
+                p.run.gold += (coins as f32 * bonus).round() as u32;
+            }
+        }
         for (t, hp) in heals {
             let r = &mut self.players[t].run;
             r.hp = (r.hp + hp).min(r.stats().max_hp);
@@ -1800,6 +1897,9 @@ impl Sim {
                     kills: p.run.kills,
                     damage: p.run.damage_done,
                     picking: !p.offer.is_empty(),
+                    look: p.run.loadout.look,
+                    gear: p.run.loadout.gear,
+                    gold: p.run.gold,
                 })
                 .collect(),
             enemies: self
@@ -1823,6 +1923,7 @@ impl Sim {
                     id: g.id,
                     look: match g.kind {
                         GemKind::Heal(_) => GemLook::Heal,
+                        GemKind::Gold(_) => GemLook::Gold,
                         GemKind::Xp(xp) if xp >= 20 => GemLook::Purple,
                         GemKind::Xp(xp) if xp >= 5 => GemLook::Green,
                         GemKind::Xp(_) => GemLook::Small,
@@ -2075,8 +2176,17 @@ mod tests {
     #[test]
     fn late_joiner_catches_up_and_leavers_leave_cleanly() {
         let mut sim = Sim::new(0, 21);
-        let a = sim.add_player("A", 7, 2, 0, 0).unwrap();
-        let b = sim.add_player("B", 3, 1, 0, 0).unwrap();
+        // Tough enough to stand in the open for the whole test.
+        let tank = Loadout {
+            stats: crate::StatBonus {
+                health: 2000.0,
+                regen: 40.0,
+                ..crate::StatBonus::default()
+            },
+            ..Loadout::default()
+        };
+        let a = sim.add_player_with("A", 7, 2, 0, 0, tank.clone()).unwrap();
+        let b = sim.add_player_with("B", 3, 1, 0, 0, tank).unwrap();
         let c = sim.center();
         let pick_all = |sim: &mut Sim| {
             while sim.phase() == SimPhase::LevelUp {

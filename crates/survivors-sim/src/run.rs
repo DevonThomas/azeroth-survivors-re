@@ -2,6 +2,7 @@
 //! buffs. The client's HUD reads its own hero's copy of this, mirrored from the [`crate::Sim`].
 
 use crate::data::{self, AbilityDef, ClassDef, PassiveDef, Stat};
+use crate::Loadout;
 
 /// An ability the hero has, with its own cooldown.
 #[derive(Clone)]
@@ -100,6 +101,17 @@ pub struct Run {
     pub version: u32,
     /// A centre-screen announcement and its seconds left.
     pub banner: Option<(String, f32)>,
+    /// What the hero brought: gear, talents, perks, look.
+    pub loadout: Loadout,
+    /// Gold picked up this run.
+    pub gold: u32,
+    /// Card rerolls and banishes left this run.
+    pub rerolls: u8,
+    pub banishes: u8,
+    /// Cards banished: never dealt again this run.
+    pub banned: Vec<&'static str>,
+    /// The second wind is still to come.
+    pub second_wind: bool,
 }
 
 impl Default for Run {
@@ -134,6 +146,12 @@ impl Default for Run {
             damage_done: 0.0,
             version: 0,
             banner: None,
+            loadout: Loadout::default(),
+            gold: 0,
+            rerolls: 0,
+            banishes: 0,
+            banned: Vec::new(),
+            second_wind: false,
         }
     }
 }
@@ -141,9 +159,19 @@ impl Default for Run {
 impl Run {
     /// A fresh run for `class`, with its starting spell.
     pub fn start(class: &'static ClassDef, race: u8) -> Self {
+        Self::start_with(class, race, Loadout::default())
+    }
+
+    /// A fresh run for `class` with what the hero brings: its starting spell and any the loadout
+    /// adds, the card tricks and the second wind.
+    pub fn start_with(class: &'static ClassDef, race: u8, loadout: Loadout) -> Self {
+        let loadout = loadout.clamped();
         let mut run = Self {
             class,
             race,
+            rerolls: loadout.rerolls,
+            banishes: loadout.banishes,
+            second_wind: loadout.second_wind,
             ..Self::default()
         };
         run.abilities.push(Owned {
@@ -151,6 +179,16 @@ impl Run {
             level: 1,
             cd: 0.5,
         });
+        for key in &loadout.start_spells {
+            if class.pool.contains(&key.as_str()) && !run.abilities.iter().any(|o| o.def.key == key) {
+                run.abilities.push(Owned {
+                    def: data::ability(key),
+                    level: 1,
+                    cd: 0.8,
+                });
+            }
+        }
+        run.loadout = loadout;
         run.hp = run.stats().max_hp;
         run.version += 1;
         run
@@ -175,6 +213,18 @@ impl Run {
             7 | 11 | 3 | 4 => s.max_hp += 15.0,
             _ => s.speed += 0.5,
         }
+        // Gear, talents and perks, before the run's own passives multiply on top.
+        let b = &self.loadout.stats;
+        s.might += b.might;
+        s.max_hp += b.health;
+        s.speed *= 1.0 + b.speed;
+        s.regen += b.regen;
+        s.haste += b.haste;
+        s.area += b.area;
+        s.magnet *= 1.0 + b.magnet;
+        s.growth += b.growth;
+        s.armor += b.armor;
+        s.crit += b.crit;
         for &(p, level) in &self.passives {
             let v = p.per_level * f32::from(level);
             match p.stat {
@@ -231,7 +281,23 @@ impl Run {
             dmg -= absorbed;
         }
         self.hp -= dmg;
+        // A blow that would kill leaves the hero at half health instead, once.
+        if self.hp <= 0.0 && self.second_wind {
+            self.second_wind = false;
+            self.hp = self.stats().max_hp * 0.5;
+            self.immune_t = self.immune_t.max(1.5);
+        }
         dmg
+    }
+
+    /// The loadout's extra damage for one spell, as a multiplier.
+    pub fn spell_damage(&self, def: &AbilityDef) -> f32 {
+        1.0 + self.loadout.damage_for(def.key)
+    }
+
+    /// The loadout's cooldown cut for one spell, as a multiplier.
+    pub fn spell_cooldown(&self, def: &AbilityDef) -> f32 {
+        1.0 - self.loadout.cooldown_for(def.key)
     }
 }
 

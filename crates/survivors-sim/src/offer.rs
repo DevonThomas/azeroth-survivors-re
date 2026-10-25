@@ -87,6 +87,17 @@ impl Choice {
     }
 }
 
+impl Choice {
+    /// The card's spell or passive key, for a banish; `None` for a rank-up or the heal.
+    pub fn key(self) -> Option<&'static str> {
+        match self {
+            Self::NewAbility(def) => Some(def.key),
+            Self::NewPassive(p) => Some(p.key),
+            _ => None,
+        }
+    }
+}
+
 pub fn ability_index(def: &AbilityDef) -> usize {
     data::ABILITIES
         .iter()
@@ -111,7 +122,7 @@ pub fn choices_for(run: &Run, rng: &mut Rng) -> Vec<Choice> {
     }
     if run.abilities.len() < data::MAX_ABILITIES {
         for key in run.class.pool {
-            if !run.abilities.iter().any(|o| o.def.key == *key) {
+            if !run.abilities.iter().any(|o| o.def.key == *key) && !run.banned.contains(key) {
                 pool.push((Choice::NewAbility(data::ability(key)), 1.0));
             }
         }
@@ -123,7 +134,7 @@ pub fn choices_for(run: &Run, rng: &mut Rng) -> Vec<Choice> {
     }
     if run.passives.len() < data::MAX_PASSIVES {
         for p in data::PASSIVES.iter().filter(|p| p.class == run.class.id) {
-            if !run.passives.iter().any(|(q, _)| q.key == p.key) {
+            if !run.passives.iter().any(|(q, _)| q.key == p.key) && !run.banned.contains(&p.key) {
                 pool.push((Choice::NewPassive(p), 0.5));
             }
         }

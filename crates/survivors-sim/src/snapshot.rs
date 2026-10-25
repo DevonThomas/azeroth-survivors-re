@@ -78,6 +78,10 @@ pub struct PlayerSnap {
     pub damage: f64,
     /// Still choosing a card.
     pub picking: bool,
+    /// The face and body picked, and the gear worn: what teammates see.
+    pub look: crate::Appearance,
+    pub gear: [u32; crate::GEAR_SLOTS],
+    pub gold: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -121,6 +125,7 @@ pub enum GemLook {
     Green,
     Purple,
     Heal,
+    Gold,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -185,6 +190,8 @@ pub enum Event {
         seq: u32,
     },
     Downed { player: Id },
+    /// A boss fell: each client rolls its own hero's drop for boss `boss` of battleground `map`.
+    BossDown { boss: u32, map: u16 },
     Revived { player: Id, by: Id },
 }
 
@@ -193,7 +200,11 @@ impl Event {
     pub fn reliable(&self) -> bool {
         matches!(
             self,
-            Self::Banner { .. } | Self::Teleport { .. } | Self::Downed { .. } | Self::Revived { .. }
+            Self::Banner { .. }
+                | Self::Teleport { .. }
+                | Self::Downed { .. }
+                | Self::Revived { .. }
+                | Self::BossDown { .. }
         )
     }
 }
