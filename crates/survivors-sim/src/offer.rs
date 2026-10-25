@@ -68,7 +68,8 @@ impl Choice {
                 _ => return false,
             },
             Self::NewPassive(p) => {
-                if run.passives.iter().any(|(q, _)| q.key == p.key)
+                if p.class != run.class.id
+                    || run.passives.iter().any(|(q, _)| q.key == p.key)
                     || run.passives.len() >= data::MAX_PASSIVES
                 {
                     return false;
@@ -121,7 +122,7 @@ pub fn choices_for(run: &Run, rng: &mut Rng) -> Vec<Choice> {
         }
     }
     if run.passives.len() < data::MAX_PASSIVES {
-        for p in data::PASSIVES {
+        for p in data::PASSIVES.iter().filter(|p| p.class == run.class.id) {
             if !run.passives.iter().any(|(q, _)| q.key == p.key) {
                 pool.push((Choice::NewPassive(p), 0.5));
             }
@@ -145,4 +146,49 @@ pub fn choices_for(run: &Run, rng: &mut Rng) -> Vec<Choice> {
         out.push(Choice::Heal);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A hero is only ever dealt its own class's spells and passives, at every level of a long
+    /// run, so a mage never sees a paladin's blessing.
+    #[test]
+    fn every_card_is_the_heros_own_class() {
+        for (ci, class) in data::CLASSES.iter().enumerate() {
+            let mut rng = Rng::seeded(ci as u64 + 1);
+            let mut run = Run::start(class, 1);
+            for _ in 0..60 {
+                let offer = choices_for(&run, &mut rng);
+                for c in &offer {
+                    match *c {
+                        Choice::NewAbility(def) => assert!(
+                            class.pool.contains(&def.key),
+                            "{} offered {}",
+                            class.name,
+                            def.key
+                        ),
+                        Choice::NewPassive(p) => assert_eq!(
+                            p.class, class.id,
+                            "{} offered {}",
+                            class.name, p.name
+                        ),
+                        _ => {}
+                    }
+                }
+                offer[0].apply(&mut run);
+            }
+            assert!(run.passives.iter().all(|(p, _)| p.class == class.id));
+        }
+    }
+
+    #[test]
+    fn passive_keys_are_unique() {
+        let mut keys: Vec<&str> = data::PASSIVES.iter().map(|p| p.key).collect();
+        keys.sort_unstable();
+        let n = keys.len();
+        keys.dedup();
+        assert_eq!(keys.len(), n, "the wire names a passive by its key's index");
+    }
 }

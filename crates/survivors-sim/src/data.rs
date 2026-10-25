@@ -905,85 +905,137 @@ pub enum Stat {
 }
 
 pub struct PassiveDef {
+    /// The class (WoW class id) whose spellbook or talents the passive comes from: a hero is only
+    /// ever offered its own class's.
+    pub class: u8,
     pub key: &'static str,
     pub name: &'static str,
-    /// Icon source, and a state visual on the hero where the spell has one.
+    /// The WoW Classic (1.12) spell: the icon, and a state visual on the hero where it has one.
     pub spell: u32,
     pub stat: Stat,
     pub per_level: f32,
 }
 
+const fn passive(class: u8, key: &'static str, name: &'static str, spell: u32, stat: Stat) -> PassiveDef {
+    PassiveDef {
+        class,
+        key,
+        name,
+        spell,
+        stat,
+        per_level: match stat {
+            Stat::Might | Stat::Speed | Stat::Area => 0.10,
+            Stat::MaxHp => 0.20,
+            Stat::Regen => 0.5,
+            Stat::Haste | Stat::Growth => 0.08,
+            Stat::Magnet => 0.40,
+            Stat::Armor => 1.0,
+            Stat::Crit => 0.05,
+        },
+    }
+}
+
+/// Each class's passives: its own buffs, stances, auras, forms, totems and talents from the 1.12
+/// spellbook, one per stat where the class has one (a rogue has no health or speed buff, a shaman
+/// moves with Ghost Wolf, its mobility spell). Every spell id is checked against `Spell.dbc` by
+/// `cargo run -p survivors-server --example spell_names`.
 pub static PASSIVES: &[PassiveDef] = &[
-    PassiveDef {
-        key: "might",
-        name: "Blessing of Might",
-        spell: 19740,
-        stat: Stat::Might,
-        per_level: 0.10,
-    },
-    PassiveDef {
-        key: "fortitude",
-        name: "Power Word: Fortitude",
-        spell: 1243,
-        stat: Stat::MaxHp,
-        per_level: 0.20,
-    },
-    PassiveDef {
-        key: "pack",
-        name: "Aspect of the Pack",
-        spell: 13159,
-        stat: Stat::Speed,
-        per_level: 0.10,
-    },
-    PassiveDef {
-        key: "renew",
-        name: "Renew",
-        spell: 139,
-        stat: Stat::Regen,
-        per_level: 0.5,
-    },
-    PassiveDef {
-        key: "intellect",
-        name: "Arcane Intellect",
-        spell: 1459,
-        stat: Stat::Haste,
-        per_level: 0.08,
-    },
-    PassiveDef {
-        key: "amplify",
-        name: "Amplify Magic",
-        spell: 1008,
-        stat: Stat::Area,
-        per_level: 0.10,
-    },
-    PassiveDef {
-        key: "detect",
-        name: "Detect Lesser Invisibility",
-        spell: 132,
-        stat: Stat::Magnet,
-        per_level: 0.40,
-    },
-    PassiveDef {
-        key: "wisdom",
-        name: "Blessing of Wisdom",
-        spell: 19742,
-        stat: Stat::Growth,
-        per_level: 0.08,
-    },
-    PassiveDef {
-        key: "wild",
-        name: "Mark of the Wild",
-        spell: 1126,
-        stat: Stat::Armor,
-        per_level: 1.0,
-    },
-    PassiveDef {
-        key: "kings",
-        name: "Blessing of Kings",
-        spell: 20217,
-        stat: Stat::Crit,
-        per_level: 0.05,
-    },
+    // Warrior
+    passive(1, "battle_shout", "Battle Shout", 6673, Stat::Might),
+    passive(1, "last_stand", "Last Stand", 12975, Stat::MaxHp),
+    passive(1, "battle_stance", "Battle Stance", 2457, Stat::Speed),
+    passive(1, "bloodrage", "Bloodrage", 2687, Stat::Regen),
+    passive(1, "berserker_stance", "Berserker Stance", 2458, Stat::Haste),
+    passive(1, "intimidating_shout", "Intimidating Shout", 5246, Stat::Area),
+    passive(1, "taunt", "Taunt", 355, Stat::Magnet),
+    passive(1, "berserker_rage", "Berserker Rage", 18499, Stat::Growth),
+    passive(1, "defensive_stance", "Defensive Stance", 71, Stat::Armor),
+    passive(1, "cruelty", "Cruelty", 12320, Stat::Crit),
+    // Paladin
+    passive(2, "blessing_of_might", "Blessing of Might", 19740, Stat::Might),
+    passive(2, "blessing_of_kings", "Blessing of Kings", 20217, Stat::MaxHp),
+    passive(2, "summon_warhorse", "Summon Warhorse", 13819, Stat::Speed),
+    passive(2, "blessing_of_wisdom", "Blessing of Wisdom", 19742, Stat::Regen),
+    passive(2, "seal_of_command", "Seal of Command", 20375, Stat::Haste),
+    passive(2, "concentration_aura", "Concentration Aura", 19746, Stat::Area),
+    passive(2, "sense_undead", "Sense Undead", 5502, Stat::Magnet),
+    passive(2, "seal_of_wisdom", "Seal of Wisdom", 20166, Stat::Growth),
+    passive(2, "devotion_aura", "Devotion Aura", 465, Stat::Armor),
+    passive(2, "conviction", "Conviction", 20117, Stat::Crit),
+    // Hunter
+    passive(3, "aspect_of_the_hawk", "Aspect of the Hawk", 13165, Stat::Might),
+    passive(3, "endurance_training", "Endurance Training", 19583, Stat::MaxHp),
+    passive(3, "aspect_of_the_pack", "Aspect of the Pack", 13159, Stat::Speed),
+    passive(3, "mend_pet", "Mend Pet", 136, Stat::Regen),
+    passive(3, "rapid_fire", "Rapid Fire", 3045, Stat::Haste),
+    passive(3, "trueshot_aura", "Trueshot Aura", 19506, Stat::Area),
+    passive(3, "eagle_eye", "Eagle Eye", 6197, Stat::Magnet),
+    passive(3, "track_beasts", "Track Beasts", 1494, Stat::Growth),
+    passive(3, "aspect_of_the_monkey", "Aspect of the Monkey", 13163, Stat::Armor),
+    passive(3, "lethal_shots", "Lethal Shots", 19426, Stat::Crit),
+    // Rogue
+    passive(4, "lethality", "Lethality", 14128, Stat::Might),
+    passive(4, "adrenaline_rush", "Adrenaline Rush", 13750, Stat::Regen),
+    passive(4, "slice_and_dice", "Slice and Dice", 5171, Stat::Haste),
+    passive(4, "distract", "Distract", 1725, Stat::Area),
+    passive(4, "pick_pocket", "Pick Pocket", 921, Stat::Magnet),
+    passive(4, "pick_lock", "Pick Lock", 1804, Stat::Growth),
+    passive(4, "evasion", "Evasion", 5277, Stat::Armor),
+    passive(4, "cold_blood", "Cold Blood", 14177, Stat::Crit),
+    // Priest
+    passive(5, "inner_focus", "Inner Focus", 14751, Stat::Might),
+    passive(5, "fortitude", "Power Word: Fortitude", 1243, Stat::MaxHp),
+    passive(5, "levitate", "Levitate", 1706, Stat::Speed),
+    passive(5, "renew", "Renew", 139, Stat::Regen),
+    passive(5, "power_infusion", "Power Infusion", 10060, Stat::Haste),
+    passive(5, "holy_reach", "Holy Reach", 27789, Stat::Area),
+    passive(5, "mind_vision", "Mind Vision", 2096, Stat::Magnet),
+    passive(5, "divine_spirit", "Divine Spirit", 14752, Stat::Growth),
+    passive(5, "inner_fire", "Inner Fire", 588, Stat::Armor),
+    passive(5, "holy_specialization", "Holy Specialization", 14889, Stat::Crit),
+    // Shaman
+    passive(7, "strength_of_earth_totem", "Strength of Earth Totem", 8075, Stat::Might),
+    passive(7, "ancestral_fortitude", "Ancestral Fortitude", 16177, Stat::MaxHp),
+    passive(7, "healing_stream_totem", "Healing Stream Totem", 5394, Stat::Regen),
+    passive(7, "windfury_totem", "Windfury Totem", 8512, Stat::Haste),
+    passive(7, "earthbind_totem", "Earthbind Totem", 2484, Stat::Area),
+    passive(7, "far_sight", "Far Sight", 6196, Stat::Magnet),
+    passive(7, "mana_spring_totem", "Mana Spring Totem", 5675, Stat::Growth),
+    passive(7, "stoneskin_totem", "Stoneskin Totem", 8071, Stat::Armor),
+    passive(7, "grace_of_air_totem", "Grace of Air Totem", 8835, Stat::Crit),
+    // Mage
+    passive(8, "arcane_power", "Arcane Power", 12042, Stat::Might),
+    passive(8, "mana_shield", "Mana Shield", 1463, Stat::MaxHp),
+    passive(8, "slow_fall", "Slow Fall", 130, Stat::Speed),
+    passive(8, "mage_armor", "Mage Armor", 6117, Stat::Regen),
+    passive(8, "arcane_intellect", "Arcane Intellect", 1459, Stat::Haste),
+    passive(8, "amplify_magic", "Amplify Magic", 1008, Stat::Area),
+    passive(8, "detect_magic", "Detect Magic", 2855, Stat::Magnet),
+    passive(8, "evocation", "Evocation", 12051, Stat::Growth),
+    passive(8, "ice_armor", "Ice Armor", 7302, Stat::Armor),
+    passive(8, "arcane_instability", "Arcane Instability", 15058, Stat::Crit),
+    // Warlock
+    passive(9, "demonic_sacrifice", "Demonic Sacrifice", 18788, Stat::Might),
+    passive(9, "blood_pact", "Blood Pact", 6307, Stat::MaxHp),
+    passive(9, "summon_felsteed", "Summon Felsteed", 5784, Stat::Speed),
+    passive(9, "demon_armor", "Demon Armor", 706, Stat::Regen),
+    passive(9, "fel_domination", "Fel Domination", 18708, Stat::Haste),
+    passive(9, "amplify_curse", "Amplify Curse", 18288, Stat::Area),
+    passive(9, "detect_lesser_invisibility", "Detect Lesser Invisibility", 132, Stat::Magnet),
+    passive(9, "eye_of_kilrogg", "Eye of Kilrogg", 126, Stat::Growth),
+    passive(9, "demon_skin", "Demon Skin", 687, Stat::Armor),
+    passive(9, "devastation", "Devastation", 18130, Stat::Crit),
+    // Druid
+    passive(11, "moonkin_form", "Moonkin Form", 24858, Stat::Might),
+    passive(11, "bear_form", "Bear Form", 5487, Stat::MaxHp),
+    passive(11, "travel_form", "Travel Form", 783, Stat::Speed),
+    passive(11, "regrowth", "Regrowth", 8936, Stat::Regen),
+    passive(11, "omen_of_clarity", "Omen of Clarity", 16864, Stat::Haste),
+    passive(11, "leader_of_the_pack", "Leader of the Pack", 17007, Stat::Area),
+    passive(11, "track_humanoids", "Track Humanoids", 5225, Stat::Magnet),
+    passive(11, "natures_grace", "Nature's Grace", 16880, Stat::Growth),
+    passive(11, "mark_of_the_wild", "Mark of the Wild", 1126, Stat::Armor),
+    passive(11, "cat_form", "Cat Form", 768, Stat::Crit),
 ];
 
 pub static CLASSES: &[ClassDef] = &[
