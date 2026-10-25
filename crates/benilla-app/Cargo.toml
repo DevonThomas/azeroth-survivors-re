@@ -80,6 +80,7 @@ rand = "0.8"
 # Survivors: the rules (stepped here for a solo run) and the co-op wire types. The UDP transport is
 # native-only, below.
 survivors-sim = { path = "../survivors-sim" }
+survivors-progress = { path = "../survivors-progress" }
 survivors-net = { path = "../survivors-net", default-features = false }
 
 # The EditBox clipboard, on the main thread as NSPasteboard requires; bevy_egui's 3.x. Native-only:

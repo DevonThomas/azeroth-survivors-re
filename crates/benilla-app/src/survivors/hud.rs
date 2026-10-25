@@ -855,6 +855,7 @@ pub(super) fn setup_hud(
 }
 
 /// The menu's hero is the run's hero: respawned whenever the pick changes.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn menu_preview(
     mut commands: Commands,
     phase: Res<State<Phase>>,
@@ -862,7 +863,10 @@ pub(super) fn menu_preview(
     mut run: ResMut<Run>,
     heroes: Query<Entity, With<Hero>>,
     world: benilla_world::world_point::WorldPoint,
-    mut shown: Local<Option<(usize, u32, usize)>>,
+    loadout: Res<super::HeroLoadout>,
+    mut items: ResMut<crate::items::Items>,
+    char_create: Option<Res<crate::entities::CharCreate>>,
+    mut shown: Local<Option<(usize, u32, usize, u32)>>,
 ) {
     if *phase.get() != Phase::Menu {
         return;
@@ -870,7 +874,7 @@ pub(super) fn menu_preview(
     let want = selection
         .class
         .zip(selection.look.and_then(|i| selection.looks.get(i)).copied());
-    let key = want.map(|(c, l)| (c, l.0, selection.stage));
+    let key = want.map(|(c, l)| (c, l.0, selection.stage, loadout.version));
     if key == *shown && (key.is_none() || !heroes.is_empty()) {
         return;
     }
@@ -886,12 +890,19 @@ pub(super) fn menu_preview(
         pos.y = h;
     }
     let serial = run.guid();
+    let mut look = loadout.loadout.look;
+    look.race = race;
+    look.sex = sex;
     hero::spawn_hero(
         &mut commands,
         &data::CLASSES[class],
         display,
-        race,
-        sex,
+        hero::Dress {
+            look,
+            gear: loadout.loadout.gear,
+            items: &mut items,
+            char_create: char_create.as_deref(),
+        },
         serial,
         pos,
     );
@@ -902,6 +913,7 @@ pub(super) fn start_run(
     run: &mut Run,
     selection: &mut Selection,
     session: &mut super::session::Session,
+    loadout: &survivors_sim::Loadout,
 ) -> bool {
     let (Some(class), Some(&(display, race, sex))) = (
         selection.class,
@@ -911,11 +923,11 @@ pub(super) fn start_run(
     };
     // The world goes to the battleground picked; until now it stood in the last one.
     selection.stage = selection.map;
-    session.start_solo(selection.map, class, race, sex, display);
+    session.start_solo(selection.map, class, race, sex, display, loadout.clone());
     let next_guid = run.next_guid;
     run.0 = survivors_sim::Run {
         next_guid,
-        ..survivors_sim::Run::start(&data::CLASSES[class], race)
+        ..survivors_sim::Run::start_with(&data::CLASSES[class], race, loadout.clone())
     };
     true
 }
@@ -987,13 +999,20 @@ pub(super) fn keys(
     mut run: ResMut<Run>,
     mut session: ResMut<super::session::Session>,
     mut net: ResMut<super::coop::Net>,
+    loadout: Res<super::HeroLoadout>,
     mut next: ResMut<NextState<Phase>>,
 ) {
     match phase.get() {
         Phase::Menu => {
             if keys.just_pressed(KeyCode::Enter)
                 && !net.typing()
-                && super::coop::enter_world(&mut net, &mut session, &mut run, &mut selection)
+                && super::coop::enter_world(
+                    &mut net,
+                    &mut session,
+                    &mut run,
+                    &mut selection,
+                    &loadout.loadout,
+                )
             {
                 next.set(Phase::Playing);
             }
@@ -1186,9 +1205,9 @@ pub(super) fn refresh_hud(
     if let Ok(mut t) = texts.p1().single_mut() {
         **t = format!("{:02}:{:02}", secs / 60, secs % 60);
     }
-    let kills = run.kills;
+    let (kills, gold) = (run.kills, run.gold);
     if let Ok(mut t) = texts.p2().single_mut() {
-        **t = format!("Kills {kills}");
+        **t = format!("Kills {kills}   Gold {gold}");
     }
     let banner = match run.banner.as_mut() {
         Some((msg, t)) => {

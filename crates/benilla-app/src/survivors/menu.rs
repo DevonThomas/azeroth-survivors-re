@@ -529,6 +529,7 @@ pub(super) fn menu_clicks(
     mut rng: ResMut<Rng>,
     mut session: ResMut<super::session::Session>,
     mut net: ResMut<super::coop::Net>,
+    loadout: Res<super::HeroLoadout>,
     mut next: ResMut<NextState<Phase>>,
 ) {
     if *phase.get() != Phase::Menu {
@@ -558,7 +559,13 @@ pub(super) fn menu_clicks(
             }
         }
         MenuAction::Enter => {
-            if super::coop::enter_world(&mut net, &mut session, &mut run, &mut selection) {
+            if super::coop::enter_world(
+                &mut net,
+                &mut session,
+                &mut run,
+                &mut selection,
+                &loadout.loadout,
+            ) {
                 next.set(Phase::Playing);
             }
         }

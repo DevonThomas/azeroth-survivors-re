@@ -92,6 +92,8 @@ fn gem_look(look: GemLook) -> (u32, f32) {
         GemLook::Green => (1267, 1.0),
         // `BFD_WispSmall.mdx`.
         GemLook::Small => (426, 1.0),
+        // `GoldPilesmall01.mdx`.
+        GemLook::Gold => (2614, 0.6),
     }
 }
 
@@ -128,6 +130,8 @@ pub(super) fn sync(
     >,
     mut me: Query<(&Guid, &mut ObjectStore, &mut Marks), With<Hero>>,
     mut fields: MessageWriter<FieldChanged>,
+    mut items: ResMut<crate::items::Items>,
+    char_create: Option<Res<crate::entities::CharCreate>>,
 ) {
     let Some((at, snap)) = &session.snap else {
         return;
@@ -375,8 +379,24 @@ pub(super) fn sync(
                     class.looks.first().copied().unwrap_or(0)
                 };
                 let serial = run.guid();
-                let entity =
-                    hero::spawn_teammate(&mut commands, class, display, p.race, p.sex, serial, pos);
+                let mut look = p.look;
+                if look.race == 0 {
+                    look.race = p.race;
+                    look.sex = p.sex;
+                }
+                let entity = hero::spawn_teammate(
+                    &mut commands,
+                    class,
+                    display,
+                    hero::Dress {
+                        look,
+                        gear: p.gear,
+                        items: &mut items,
+                        char_create: char_create.as_deref(),
+                    },
+                    serial,
+                    pos,
+                );
                 commands.entity(entity).insert((
                     SimId(p.id),
                     Teammate {
@@ -458,6 +478,7 @@ pub(super) fn play_events(
     world: WorldPoint,
     mut hero: Query<&mut Transform, With<Hero>>,
     mut fx: Fx,
+    mut loot: MessageWriter<super::progress::BossLoot>,
 ) {
     if session.events.is_empty() {
         return;
@@ -527,6 +548,9 @@ pub(super) fn play_events(
                 if let (Some(target), Some(caster)) = (ids.entity(player), ids.entity(by)) {
                     fx.cast(caster, 2006, &[target], None);
                 }
+            }
+            Event::BossDown { map, .. } => {
+                loot.write(super::progress::BossLoot { map });
             }
             Event::Banner { .. } | Event::Downed { .. } => {}
         }

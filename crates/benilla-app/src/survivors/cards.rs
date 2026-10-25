@@ -526,11 +526,13 @@ pub(super) fn choose_card(
         .iter()
         .find(|(c, i)| **i == Interaction::Pressed && c.t >= DEAL_SECS)
         .map(|(c, _)| c.index);
+    // Shift with a digit banishes the card instead (`hero_ui::card_tricks`).
+    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     for (i, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3]
         .into_iter()
         .enumerate()
     {
-        if keys.just_pressed(key) {
+        if keys.just_pressed(key) && !shift {
             pick = Some(i);
         }
     }

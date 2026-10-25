@@ -29,6 +29,8 @@ pub(super) struct Auto {
     /// `WOW_SURVIVORS_COOP=<n>`: Quick Play into a co-op room, and start once `n` are in it.
     coop: Option<usize>,
     coop_asked: bool,
+    /// `WOW_SURVIVORS_HERO_SHOTS=1`: before the run, open each Hero screen tab for a screenshot.
+    hero_tour: Option<usize>,
     frames: u32,
     wait: f32,
     shots: Option<std::path::PathBuf>,
@@ -91,6 +93,7 @@ pub(super) fn from_env() -> Option<Auto> {
             .ok()
             .and_then(|n| n.trim().parse().ok()),
         coop_asked: false,
+        hero_tour: std::env::var_os("WOW_SURVIVORS_HERO_SHOTS").map(|_| 0),
         frames: 0,
         wait: 0.0,
         shots,
@@ -165,6 +168,8 @@ pub(super) fn drive(
     mut rng: ResMut<Rng>,
     mut session: ResMut<super::session::Session>,
     mut net: ResMut<super::coop::Net>,
+    loadout: Res<super::HeroLoadout>,
+    mut screen: ResMut<super::hero_ui::HeroScreen>,
     loading: Res<crate::loading_screen::LoadingScreen>,
     heroes: Query<(), With<Hero>>,
     enemies: Query<&Enemy>,
@@ -188,19 +193,44 @@ pub(super) fn drive(
                 auto.wait = 0.0;
             } else if auto.wait > 2.0 && auto.wait < 3.0 {
                 auto.capture_once(&mut commands, "menu".into());
+            } else if let Some(i) = auto.hero_tour.filter(|_| auto.wait > 3.0) {
+                // Each tab gets two seconds: built, its icons loaded, then the shot.
+                let tabs = super::hero_ui::TABS;
+                if i < tabs.len() {
+                    screen.show(Some(tabs[i]));
+                    if auto.wait > 4.5 {
+                        auto.capture_once(&mut commands, format!("hero-{i}"));
+                    }
+                    if auto.wait > 5.0 {
+                        auto.hero_tour = Some(i + 1);
+                        auto.wait = 3.0;
+                    }
+                } else {
+                    screen.show(None);
+                    auto.hero_tour = None;
+                    auto.wait = 3.0;
+                }
             } else if let Some(party) = auto.coop {
                 if auto.wait > 3.0 && !auto.coop_asked {
-                    if let Some(pick) = super::coop::pick_of(&net, &selection) {
+                    if let Some(pick) = super::coop::pick_of(&net, &selection, &loadout.loadout) {
                         net.quick(pick, selection.map as u16);
                         auto.coop_asked = true;
                         info!("survivors auto: quick play, waiting for a party of {party}");
                     }
                 }
                 if net.members() >= party && net.leader() && auto.wait > 6.0 {
-                    super::coop::enter_world(&mut net, &mut session, &mut run, &mut selection);
+                    super::coop::enter_world(
+                        &mut net,
+                        &mut session,
+                        &mut run,
+                        &mut selection,
+                        &loadout.loadout,
+                    );
                     auto.wait = 0.0;
                 }
-            } else if auto.wait > 3.0 && hud::start_run(&mut run, &mut selection, &mut session) {
+            } else if auto.wait > 3.0
+                && hud::start_run(&mut run, &mut selection, &mut session, &loadout.loadout)
+            {
                 info!(
                     "survivors auto: run begins as {} at {}",
                     run.class.name,

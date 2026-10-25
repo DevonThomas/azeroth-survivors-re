@@ -9,6 +9,7 @@ use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::ButtonState;
 use bevy::prelude::*;
 use survivors_net::{ClientMsg, Lobby, Pick, ServerMsg};
+use survivors_sim::Loadout;
 
 use super::hud::{self, HudFont, HudRoot, MenuRoot};
 use super::menu::MenuBuilt;
@@ -184,15 +185,19 @@ impl Net {
 }
 
 /// The hero picked at the menu, for the room.
-pub(super) fn pick_of(net: &Net, selection: &Selection) -> Option<Pick> {
+pub(super) fn pick_of(net: &Net, selection: &Selection, loadout: &Loadout) -> Option<Pick> {
     let class = selection.class?;
     let &(display, race, sex) = selection.look.and_then(|i| selection.looks.get(i))?;
+    let mut loadout = loadout.clone();
+    loadout.look.race = race;
+    loadout.look.sex = sex;
     Some(Pick {
         name: net.name.clone(),
         class: class as u8,
         race,
         sex,
         display,
+        loadout,
     })
 }
 
@@ -203,10 +208,11 @@ pub(super) fn enter_world(
     session: &mut Session,
     run: &mut Run,
     selection: &mut Selection,
+    loadout: &Loadout,
 ) -> bool {
     if net.in_room() {
         if net.leader() {
-            if let Some(pick) = pick_of(net, selection) {
+            if let Some(pick) = pick_of(net, selection, loadout) {
                 net.send(&ClientMsg::SetPick(pick));
             }
             net.send(&ClientMsg::SetMap(selection.map as u16));
@@ -217,7 +223,7 @@ pub(super) fn enter_world(
         }
         return false;
     }
-    hud::start_run(run, selection, session)
+    hud::start_run(run, selection, session, loadout)
 }
 
 /// Read what the server sent: the room, the run's snapshots, the local hero, the events.
@@ -230,6 +236,7 @@ pub(super) fn pump(
     mut session: ResMut<Session>,
     mut run: ResMut<Run>,
     mut selection: ResMut<Selection>,
+    hero: Res<super::HeroLoadout>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -310,8 +317,10 @@ pub(super) fn pump(
                 selection.version += 1;
                 session.start_online(you);
                 let next_guid = run.next_guid;
+                // The hero's own loadout: the server's hero updates keep it.
                 run.0 = survivors_sim::Run {
                     next_guid,
+                    loadout: hero.loadout.clone(),
                     ..Default::default()
                 };
                 net.status.clear();
@@ -411,6 +420,7 @@ pub(super) fn panel_input(
     actions: Query<(Entity, &CoopAction)>,
     phase: Res<State<Phase>>,
     selection: Res<Selection>,
+    loadout: Res<super::HeroLoadout>,
     mut keys_in: MessageReader<KeyboardInput>,
     mut net: ResMut<Net>,
 ) {
@@ -418,7 +428,7 @@ pub(super) fn panel_input(
         keys_in.clear();
         return;
     }
-    let pick = pick_of(&net, &selection);
+    let pick = pick_of(&net, &selection, &loadout.loadout);
     for (e, action) in &actions {
         if !clicks.hit(e) {
             continue;

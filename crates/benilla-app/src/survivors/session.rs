@@ -58,12 +58,20 @@ impl Session {
     }
 
     /// Start a solo run.
-    pub fn start_solo(&mut self, map: usize, class: usize, race: u8, sex: u8, display: u32) {
+    pub fn start_solo(
+        &mut self,
+        map: usize,
+        class: usize,
+        race: u8,
+        sex: u8,
+        display: u32,
+        loadout: survivors_sim::Loadout,
+    ) {
         let seed = web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
             .map_or(1, |d| d.as_nanos() as u64);
         let mut sim = Sim::new(map, seed);
-        self.me = sim.add_player("", class, race, sex, display);
+        self.me = sim.add_player_with("", class, race, sex, display, loadout);
         *self = Self {
             backend: Backend::Solo(Box::new(sim)),
             me: self.me,
@@ -119,6 +127,46 @@ impl Session {
                 self.offer.clear();
                 self.picked = true;
                 self.picked_from = run.pending_levels;
+            }
+            Backend::Idle => {}
+        }
+    }
+
+    /// The card tricks: a fresh hand, banishing card `index`, or passing the hand for gold.
+    pub fn reroll(&mut self, net: &mut Net) {
+        let Some(me) = self.me else { return };
+        match &mut self.backend {
+            Backend::Solo(sim) => {
+                sim.reroll(me);
+                self.offer = sim.offer_of(me).to_vec();
+            }
+            Backend::Online => net.send(&survivors_net::ClientMsg::Reroll),
+            Backend::Idle => {}
+        }
+    }
+
+    pub fn banish(&mut self, index: usize, net: &mut Net) {
+        let Some(me) = self.me else { return };
+        match &mut self.backend {
+            Backend::Solo(sim) => {
+                sim.banish(me, index);
+                self.offer = sim.offer_of(me).to_vec();
+            }
+            Backend::Online => net.send(&survivors_net::ClientMsg::Banish { index: index as u8 }),
+            Backend::Idle => {}
+        }
+    }
+
+    pub fn skip(&mut self, net: &mut Net) {
+        let Some(me) = self.me else { return };
+        match &mut self.backend {
+            Backend::Solo(sim) => {
+                sim.skip(me);
+                self.offer = sim.offer_of(me).to_vec();
+            }
+            Backend::Online => {
+                net.send(&survivors_net::ClientMsg::Skip);
+                self.offer.clear();
             }
             Backend::Idle => {}
         }

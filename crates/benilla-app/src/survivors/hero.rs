@@ -93,7 +93,49 @@ pub(super) fn follow_map(
 }
 
 /// The hero in the class trainer's look, weapons drawn.
+/// What a hero looks like: the face and body picked, and the gear worn.
+pub(super) struct Dress<'a> {
+    pub look: survivors_sim::Appearance,
+    pub gear: [u32; survivors_sim::GEAR_SLOTS],
+    pub items: &'a mut crate::items::Items,
+    pub char_create: Option<&'a crate::entities::CharCreate>,
+}
+
+/// The hero as a WoW player character in its own look and gear; where the client has no body
+/// for the race and sex, the class trainer's look `display` stands in.
 pub(super) fn spawn_hero(
+    commands: &mut Commands,
+    class: &'static ClassDef,
+    display: u32,
+    dress: Dress,
+    serial: u64,
+    pos: Vec3,
+) -> Entity {
+    let body = dress
+        .char_create
+        .and_then(|c| c.0.body_display(dress.look.race, dress.look.sex));
+    let e = match body {
+        Some(body) => super::player::spawn_player(
+            commands,
+            super::player::HeroBody {
+                serial,
+                class,
+                look: dress.look,
+                gear: dress.gear,
+                body,
+                pos,
+                items: dress.items,
+            },
+        ),
+        None => trainer_body(commands, class, display, dress.look.race, dress.look.sex, serial, pos),
+    };
+    commands
+        .entity(e)
+        .insert((Hero { vy: 0.0, air: 0.0 }, Marks::buffs()));
+    e
+}
+
+fn trainer_body(
     commands: &mut Commands,
     class: &'static ClassDef,
     display: u32,
@@ -106,7 +148,7 @@ pub(super) fn spawn_hero(
         | u32::from(class.id) << 8
         | u32::from(sex) << 16
         | u32::from(class.power) << 24;
-    let e = units::spawn_unit(
+    units::spawn_unit(
         commands,
         &UnitSpec {
             serial,
@@ -120,11 +162,7 @@ pub(super) fn spawn_hero(
         },
         pos,
         0.0,
-    );
-    commands
-        .entity(e)
-        .insert((Hero { vy: 0.0, air: 0.0 }, Marks::buffs()));
-    e
+    )
 }
 
 /// Another player's hero: the same body, driven by the snapshots instead of the keyboard.
@@ -132,12 +170,11 @@ pub(super) fn spawn_teammate(
     commands: &mut Commands,
     class: &'static ClassDef,
     display: u32,
-    race: u8,
-    sex: u8,
+    dress: Dress,
     serial: u64,
     pos: Vec3,
 ) -> Entity {
-    let e = spawn_hero(commands, class, display, race, sex, serial, pos);
+    let e = spawn_hero(commands, class, display, dress, serial, pos);
     commands.entity(e).remove::<Hero>();
     e
 }

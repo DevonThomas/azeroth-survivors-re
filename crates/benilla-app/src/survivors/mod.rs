@@ -9,10 +9,13 @@ mod cards;
 mod coop;
 mod grade;
 mod hero;
+mod hero_ui;
 mod hud;
 mod menu;
 mod minimap;
 mod mobility;
+mod player;
+mod progress;
 mod session;
 mod units;
 mod view;
@@ -51,6 +54,40 @@ impl Plugin for SurvivorsPlugin {
             .init_resource::<session::Session>()
             .init_resource::<view::Ids>()
             .insert_resource(coop::Net::from_env())
+            .init_resource::<progress::Progress>()
+            .init_resource::<progress::GearArt>()
+            .init_resource::<progress::TalentBook>()
+            .init_resource::<HeroLoadout>()
+            .init_resource::<hero_ui::HeroScreen>()
+            .add_message::<progress::BossLoot>()
+            .add_systems(
+                Update,
+                (
+                    progress::build_gear_art,
+                    progress::build_talent_book,
+                    refresh_loadout,
+                )
+                    .chain()
+                    .before(hud::menu_preview),
+            )
+            .add_systems(
+                Update,
+                (
+                    progress::grant_loot,
+                    progress::tick_toasts,
+                    hero_ui::build,
+                    hero_ui::tabs,
+                    hero_ui::rebuild,
+                    hero_ui::clicks,
+                    hero_ui::card_tricks,
+                    hero_ui::fill_item_icons,
+                    hero_ui::refresh_overlay,
+                    progress::save,
+                )
+                    .chain()
+                    .after(view::play_events),
+            )
+            .add_systems(OnEnter(Phase::GameOver), progress::bank_run)
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
             .add_systems(Startup, hud::setup_hud)
             .add_systems(Update, hero::daylight)
@@ -204,6 +241,40 @@ impl Selection {
 /// The local hero's run, mirrored every frame from the session: the HUD and the cards read it.
 #[derive(Resource, Default, Deref, DerefMut)]
 pub(super) struct Run(pub survivors_sim::Run);
+
+/// What the account brings a run as the hero picked at the menu, kept current while the menu is
+/// up; `version` moves when the look or the worn gear changes, so the menu hero is redressed.
+#[derive(Resource, Default)]
+pub(super) struct HeroLoadout {
+    pub loadout: survivors_sim::Loadout,
+    pub version: u32,
+}
+
+fn refresh_loadout(
+    phase: Res<State<Phase>>,
+    selection: Res<Selection>,
+    progress: Res<progress::Progress>,
+    book: Res<progress::TalentBook>,
+    art: Res<progress::GearArt>,
+    mut hero: ResMut<HeroLoadout>,
+) {
+    if *phase.get() != Phase::Menu {
+        return;
+    }
+    let (Some(class), Some(&(_, race, sex))) = (
+        selection.class_def(),
+        selection.look.and_then(|i| selection.looks.get(i)),
+    ) else {
+        return;
+    };
+    let l = progress::loadout_for(&progress.account, class.id, race, sex, &book, &art);
+    if l != hero.loadout {
+        if l.look != hero.loadout.look || l.gear != hero.loadout.gear {
+            hero.version += 1;
+        }
+        hero.loadout = l;
+    }
+}
 
 /// The client's own dice: the menu's Randomize and the cosmetic rolls. The run's are the sim's.
 #[derive(Resource, Deref, DerefMut)]
