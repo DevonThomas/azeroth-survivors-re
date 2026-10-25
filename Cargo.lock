@@ -6703,6 +6703,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "survivors-progress"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "survivors-sim",
+]
+
+[[package]]
 name = "survivors-server"
 version = "0.2.0"
 dependencies = [
