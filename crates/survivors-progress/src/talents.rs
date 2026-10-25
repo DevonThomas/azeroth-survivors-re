@@ -20,6 +20,8 @@ pub struct TalentInfo {
     pub max_rank: u8,
     /// The talent teaches a spell rather than modifying one (a single-rank keystone).
     pub teaches: bool,
+    /// Another talent of the tree that must have this many ranks first (Classic's arrows).
+    pub prereq: Option<(u32, u8)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -111,6 +113,75 @@ pub fn effect_for(info: &TalentInfo, class: u8) -> TalentEffect {
     })
 }
 
+/// The effect in words, for a tooltip: what one rank does.
+pub fn describe(effect: &TalentEffect) -> String {
+    let name = |key: &str| {
+        key.split('_')
+            .map(|w| {
+                let mut c = w.chars();
+                c.next()
+                    .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    match effect {
+        TalentEffect::Spell { key, damage, cooldown } => format!(
+            "Each rank: {} deals {:.0}% more damage and recovers {:.0}% sooner.",
+            name(key),
+            damage * 100.0,
+            cooldown * 100.0
+        ),
+        TalentEffect::StartSpell(key) => format!("You start every run with {}.", name(key)),
+        TalentEffect::Stats(s) => format!("Each rank: {}.", stat_words(s)),
+    }
+}
+
+/// A stat bonus in words: "+2% damage, +8 health".
+pub fn stat_words(s: &StatBonus) -> String {
+    let mut parts = Vec::new();
+    let pct = |v: f32| format!("{:.1}", v * 100.0).trim_end_matches(".0").to_string();
+    if s.might > 0.0 {
+        parts.push(format!("+{}% damage", pct(s.might)));
+    }
+    if s.health > 0.0 {
+        parts.push(format!("+{:.0} health", s.health));
+    }
+    if s.crit > 0.0 {
+        parts.push(format!("+{}% critical strike", pct(s.crit)));
+    }
+    if s.haste > 0.0 {
+        parts.push(format!("+{}% cooldown recovery", pct(s.haste)));
+    }
+    if s.regen > 0.0 {
+        parts.push(format!("+{:.1} health a second", s.regen));
+    }
+    if s.area > 0.0 {
+        parts.push(format!("+{}% area", pct(s.area)));
+    }
+    if s.armor > 0.0 {
+        parts.push(format!("+{:.1} armour", s.armor));
+    }
+    if s.speed > 0.0 {
+        parts.push(format!("+{}% run speed", pct(s.speed)));
+    }
+    if s.magnet > 0.0 {
+        parts.push(format!("+{}% pickup radius", pct(s.magnet)));
+    }
+    if s.growth > 0.0 {
+        parts.push(format!("+{}% experience", pct(s.growth)));
+    }
+    if s.gold > 0.0 {
+        parts.push(format!("+{}% gold", pct(s.gold)));
+    }
+    if parts.is_empty() {
+        "nothing".into()
+    } else {
+        parts.join(", ")
+    }
+}
+
 /// Talent points earned with `xp` talent experience: the first comes quickly, each later one
 /// costs a little more, up to Classic's 51.
 pub fn points_for(xp: u64) -> u32 {
@@ -147,6 +218,7 @@ mod tests {
             col: 0,
             max_rank,
             teaches: false,
+            prereq: None,
         }
     }
 

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 use survivors_progress::account::Payout;
-use survivors_progress::gear::{ItemKey, Slot, TIERS};
+use survivors_progress::gear::{ItemKey, Slot, Tier, TIERS};
 use survivors_progress::{Account, RunResult, TalentInfo};
 use survivors_sim::{data, Appearance, Loadout, Rng};
 
@@ -180,8 +180,83 @@ pub(super) fn build_gear_art(
     for (key, (_, id, icon)) in loose {
         found.insert(key, (id, icon));
     }
+    extra_art(&displays.catalog, &mut found);
     info!("survivors: gear art for {} set pieces", found.len());
     art.pieces = found;
+}
+
+/// The pieces outside the sets: a cloak per tier from the cape families (the same for every
+/// class), a ring per tier from the ring icons, and a weapon per tier in the class's own kind
+/// (its default weapon's model, the variants `_a` to `_d` by tier).
+fn extra_art(
+    catalog: &benilla_formats::ItemDisplayCatalog,
+    found: &mut HashMap<ItemKey, (u32, Option<String>)>,
+) {
+    let model_of = |d: &benilla_formats::ItemDisplay| {
+        d.model[0]
+            .as_deref()
+            .map(|m| m.rsplit(['\\', '/']).next().unwrap_or(m).to_ascii_lowercase())
+    };
+    let mut rows: Vec<(u32, &benilla_formats::ItemDisplay)> = catalog.iter().collect();
+    rows.sort_by_key(|r| r.0);
+    let icon_low = |d: &benilla_formats::ItemDisplay| d.icon.as_deref().map(str::to_ascii_lowercase);
+
+    const CAPES: [&str; 4] = ["cape_cloth_a", "cape_leather_b", "cape_leather_c", "cape_leather_d"];
+    let cape: Vec<Option<(u32, Option<String>)>> = CAPES
+        .iter()
+        .map(|fam| {
+            rows.iter().find_map(|(id, d)| {
+                let icon = icon_low(d)?;
+                let ok = icon.contains("inv_misc_cape")
+                    && d.region_textures
+                        .iter()
+                        .chain(d.model_texture.iter())
+                        .flatten()
+                        .any(|t| t.to_ascii_lowercase().contains(fam));
+                ok.then(|| (*id, d.icon.clone()))
+            })
+        })
+        .collect();
+
+    let mut rings: Vec<(u32, Option<String>)> = Vec::new();
+    for (id, d) in &rows {
+        if let Some(icon) = icon_low(d) {
+            if icon.contains("inv_jewelry_ring_")
+                && !rings.iter().any(|(_, i)| i.as_deref().map(str::to_ascii_lowercase) == Some(icon.clone()))
+            {
+                rings.push((*id, d.icon.clone()));
+            }
+        }
+    }
+
+    for class in data::CLASSES {
+        let base = class.weapons.iter().find(|w| w.0 == 0).map(|w| w.1);
+        let kind: Option<String> = base
+            .and_then(|b| catalog.get(b))
+            .and_then(model_of)
+            .map(|m| m.split('_').take(2).collect::<Vec<_>>().join("_"));
+        for (ti, tier) in TIERS.into_iter().enumerate() {
+            if let Some(Some(c)) = cape.get(ti) {
+                found.insert(ItemKey { class: class.id, tier, slot: Slot::Back }, c.clone());
+            }
+            if !rings.is_empty() {
+                let r = &rings[(ti * 2 + 1) * rings.len() / 8];
+                found.insert(ItemKey { class: class.id, tier, slot: Slot::Finger }, r.clone());
+            }
+            let letter = ["_a_", "_b_", "_c_", "_d_"][ti];
+            let weapon = kind.as_ref().and_then(|k| {
+                rows.iter().find_map(|(id, d)| {
+                    let m = model_of(d)?;
+                    (d.icon.is_some() && m.starts_with(k.as_str()) && m.contains(letter))
+                        .then(|| (*id, d.icon.clone()))
+                })
+            });
+            if let Some(w) = weapon {
+                found.insert(ItemKey { class: class.id, tier, slot: Slot::MainHand }, w);
+            }
+        }
+    }
+    let _ = Tier::Dungeon;
 }
 
 /// One talent tree as the client's tables give it.
@@ -258,6 +333,8 @@ pub(super) fn build_talent_book(
                                 col: t.col as u8,
                                 max_rank: t.max_rank() as u8,
                                 teaches: false,
+                                prereq: (t.prereq_talent != 0)
+                                    .then(|| (t.prereq_talent, t.prereq_rank as u8 + 1)),
                             },
                             spell,
                         ))
@@ -306,8 +383,8 @@ pub(super) fn worn_gear(account: &Account, class: u8, art: &GearArt) -> [u32; su
     let mut gear = [0; survivors_sim::GEAR_SLOTS];
     if let Some(cp) = account.classes.get(&class) {
         for item in cp.equipped.values() {
-            if let Some(d) = art.display(*item) {
-                gear[item.slot.gear_index()] = d;
+            if let (Some(i), Some(d)) = (item.slot.gear_index(), art.display(*item)) {
+                gear[i] = d;
             }
         }
     }

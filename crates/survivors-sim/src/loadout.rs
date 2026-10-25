@@ -78,8 +78,9 @@ pub struct Appearance {
     pub facial: u8,
 }
 
-/// Worn equipment slots, in the order the visible-item fields take them.
-pub const GEAR_SLOTS: usize = 10;
+/// Worn equipment slots: head, shoulders, chest, waist, legs, feet, wrists, hands, main hand, off
+/// hand, back.
+pub const GEAR_SLOTS: usize = 11;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Loadout {

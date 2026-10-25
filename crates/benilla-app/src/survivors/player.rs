@@ -36,7 +36,7 @@ const FIELD_VISIBLE_ITEM: u16 = 260;
 const TYPE_PLAYER: u32 = 0x19;
 
 /// The equipment slot and inventory type each [`survivors_sim::Loadout::gear`] entry wears in:
-/// head, shoulders, chest, waist, legs, feet, wrists, hands, main hand, off hand.
+/// head, shoulders, chest, waist, legs, feet, wrists, hands, main hand, off hand, back.
 const GEAR_EQUIP: [(u16, u32); GEAR_SLOTS] = [
     (0, 1),
     (2, 3),
@@ -48,6 +48,7 @@ const GEAR_EQUIP: [(u16, u32); GEAR_SLOTS] = [
     (9, 10),
     (15, 21),
     (16, 22),
+    (14, 16),
 ];
 
 /// Who to draw.
@@ -147,7 +148,11 @@ fn weapon_entry(items: &mut Items, w: &Weapon) -> u32 {
 /// The worn-item fields for `gear` and the class's weapons.
 fn worn_pairs(items: &mut Items, class: &ClassDef, gear: &[u32; GEAR_SLOTS]) -> Vec<(u16, u32)> {
     let mut pairs = Vec::new();
-    for (i, &(slot, inv)) in GEAR_EQUIP.iter().enumerate().take(8) {
+    // The armour and the cloak; the hands are the weapons'.
+    for (i, &(slot, inv)) in GEAR_EQUIP.iter().enumerate() {
+        if (15..=16).contains(&slot) {
+            continue;
+        }
         let entry = if gear[i] != 0 {
             armour_entry(items, gear[i], inv)
         } else {
@@ -156,9 +161,14 @@ fn worn_pairs(items: &mut Items, class: &ClassDef, gear: &[u32; GEAR_SLOTS]) -> 
         pairs.push((FIELD_VISIBLE_ITEM + 12 * slot, entry));
     }
     for w in class.weapons {
-        // The class tables number weapons 0 main hand, 1 off hand, 2 ranged.
+        // The class tables number weapons 0 main hand, 1 off hand, 2 ranged. A dropped weapon is
+        // the class's own kind in another look.
         let slot = 15 + w.0;
-        pairs.push((FIELD_VISIBLE_ITEM + 12 * slot, weapon_entry(items, w)));
+        let mut w = *w;
+        if w.0 == 0 && gear[8] != 0 {
+            w.1 = gear[8];
+        }
+        pairs.push((FIELD_VISIBLE_ITEM + 12 * slot, weapon_entry(items, &w)));
     }
     pairs
 }

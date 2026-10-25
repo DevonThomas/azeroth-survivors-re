@@ -5,7 +5,8 @@
 
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
-use survivors_progress::gear::{ItemKey, Slot, ARMOUR_SLOTS};
+use survivors_progress::gear::{self, ItemKey, Slot, ALL_SLOTS};
+use survivors_progress::talents;
 use survivors_progress::{perks, ACHIEVEMENTS, PERKS};
 
 use super::coop::Net;
@@ -56,7 +57,9 @@ pub(super) enum HeroAction {
     Dial(usize, i8),
     Equip(ItemKey),
     Unequip(Slot),
-    Learn { id: u32, row: u8, max_rank: u8, tree: usize },
+    Enhance(ItemKey),
+    OpenCache,
+    Learn { id: u32, tree: usize },
     ResetTalents,
     BuyPerk(&'static str),
     ResetPerks,
@@ -77,6 +80,12 @@ pub(super) struct Overlay;
 pub(super) struct TrickRow;
 #[derive(Component)]
 pub(super) struct TrickText;
+
+/// Text shown by the cursor while this node is hovered.
+#[derive(Component)]
+pub(super) struct Tip(pub String);
+#[derive(Component)]
+pub(super) struct TipBox;
 
 /// An inventory icon path to load into this node.
 #[derive(Component)]
@@ -207,6 +216,21 @@ pub(super) fn build(
         },
         // Over the results screen's own dimming.
         GlobalZIndex(1000),
+    ));
+    commands.spawn((
+        TipBox,
+        hud::text_bundle(f, "", 13.0, Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            max_width: Val::Px(320.0),
+            padding: UiRect::all(Val::Px(8.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            display: Display::None,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.02, 0.02, 0.04, 0.97)),
+        BorderColor::all(EDGE),
+        GlobalZIndex(2000),
     ));
     commands
         .spawn((
@@ -345,18 +369,38 @@ pub(super) fn rebuild(
         Tab::Gear => {
             let worn = acc.classes.get(&cid).map(|c| c.equipped.clone()).unwrap_or_default();
             let s = hero.loadout.stats;
+            c.spawn(Node {
+                column_gap: Val::Px(12.0),
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn(hud::text_bundle(
+                    f,
+                    format!(
+                        "Gold: {}   ·   Worn, talents and perks: +{:.0}% damage, +{:.0} health, +{:.1}% crit, +{:.1}% haste, +{:.1} armour",
+                        acc.gold,
+                        s.might * 100.0,
+                        s.health,
+                        s.crit * 100.0,
+                        s.haste * 100.0,
+                        s.armor
+                    ),
+                    13.0,
+                    Color::WHITE,
+                ));
+                button(
+                    row,
+                    f,
+                    HeroAction::OpenCache,
+                    &format!("Buy a cache ({} gold)", acc.cache_cost(cid)),
+                    200.0,
+                );
+            });
             c.spawn(hud::text_bundle(
                 f,
-                format!(
-                    "Bosses drop your class's Classic armour sets: Dungeon 1 in the early zones, then Tier 1, 2 and 3. Click a piece to wear it, a slot to take it off.\nWorn and talents together: +{:.0}% damage, +{:.0} health, +{:.1}% crit, +{:.1}% haste, +{:.1} armour.   Gold banked: {}",
-                    s.might * 100.0,
-                    s.health,
-                    s.crit * 100.0,
-                    s.haste * 100.0,
-                    s.armor,
-                    acc.gold
-                ),
-                13.0,
+                "Bosses drop your class's Classic sets (Dungeon 1, then Tier 1, 2, 3), cloaks, rings and weapons. Click a piece to wear it, a slot to take it off; gold enhances what you wear.",
+                12.0,
                 DIM,
             ));
             c.spawn(Node {
@@ -366,38 +410,66 @@ pub(super) fn rebuild(
             .with_children(|cols| {
                 cols.spawn(Node {
                     flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(4.0),
-                    width: Val::Px(330.0),
+                    row_gap: Val::Px(2.0),
+                    width: Val::Px(400.0),
                     ..default()
                 })
                 .with_children(|slots| {
-                    for slot in ARMOUR_SLOTS {
+                    for slot in ALL_SLOTS {
                         let item = worn.get(&slot.index()).copied();
                         slots
-                            .spawn((
-                                HeroAction::Unequip(slot),
-                                Button,
-                                Interaction::default(),
-                                Node {
-                                    column_gap: Val::Px(8.0),
-                                    align_items: AlignItems::Center,
-                                    ..default()
-                                },
-                            ))
-                            .with_children(|row| {
-                                let mut n = row.spawn((
-                                    icon_node(34.0),
-                                    ImageNode::default(),
-                                    BorderColor::all(EDGE),
-                                ));
-                                if let Some(icon) = item.and_then(|i| art.icon(i)) {
-                                    n.insert(ItemIcon(icon.to_string()));
+                            .spawn(Node {
+                                column_gap: Val::Px(6.0),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            })
+                            .with_children(|line| {
+                                line.spawn((
+                                    HeroAction::Unequip(slot),
+                                    Button,
+                                    Interaction::default(),
+                                    Node {
+                                        column_gap: Val::Px(8.0),
+                                        align_items: AlignItems::Center,
+                                        width: Val::Px(300.0),
+                                        ..default()
+                                    },
+                                    Tip(item.map_or_else(
+                                        || format!("{}: nothing worn", slot.name()),
+                                        |i| item_tip(i, acc.enhancement(i)),
+                                    )),
+                                ))
+                                .with_children(|row| {
+                                    let mut n = row.spawn((
+                                        icon_node(28.0),
+                                        ImageNode::default(),
+                                        BorderColor::all(EDGE),
+                                    ));
+                                    if let Some(icon) = item.and_then(|i| art.icon(i)) {
+                                        n.insert(ItemIcon(icon.to_string()));
+                                    }
+                                    let (text, color) = match item {
+                                        Some(i) => {
+                                            let lvl = acc.enhancement(i);
+                                            let plus = if lvl > 0 { format!(" +{lvl}") } else { String::new() };
+                                            (format!("{}{plus}", i.name()), quality(i.tier.quality()))
+                                        }
+                                        None => (format!("{}: empty", slot.name()), DIM),
+                                    };
+                                    row.spawn(hud::text_bundle(f, text, 12.0, color));
+                                });
+                                if let Some(i) = item {
+                                    let lvl = acc.enhancement(i);
+                                    if lvl < gear::MAX_ENHANCE {
+                                        button(
+                                            line,
+                                            f,
+                                            HeroAction::Enhance(i),
+                                            &format!("+ {}g", gear::enhance_cost(i, lvl)),
+                                            86.0,
+                                        );
+                                    }
                                 }
-                                let (text, color) = match item {
-                                    Some(i) => (i.name(), quality(i.tier.quality())),
-                                    None => (format!("{}: empty", slot.name()), DIM),
-                                };
-                                row.spawn(hud::text_bundle(f, text, 13.0, color));
                             });
                     }
                 });
@@ -406,7 +478,7 @@ pub(super) fn rebuild(
                     flex_wrap: FlexWrap::Wrap,
                     column_gap: Val::Px(4.0),
                     row_gap: Val::Px(4.0),
-                    width: Val::Px(520.0),
+                    width: Val::Px(420.0),
                     align_content: AlignContent::FlexStart,
                     ..default()
                 })
@@ -425,9 +497,10 @@ pub(super) fn rebuild(
                             HeroAction::Equip(item),
                             Button,
                             Interaction::default(),
-                            icon_node(40.0),
+                            icon_node(38.0),
                             ImageNode::default(),
                             BorderColor::all(quality(item.tier.quality())),
+                            Tip(item_tip(item, acc.enhancement(item))),
                         ));
                         if let Some(icon) = art.icon(item) {
                             b.insert(ItemIcon(icon.to_string()));
@@ -495,7 +568,31 @@ pub(super) fn rebuild(
                         .with_children(|g| {
                             for (info, spell) in &tree.talents {
                                 let rank = cp.talents.get(&info.id).copied().unwrap_or(0);
-                                let open = survivors_progress::talents::row_open(info.row, spent);
+                                let prereq_ok = info.prereq.is_none_or(|(id, need)| {
+                                    cp.talents.get(&id).copied().unwrap_or(0) >= need
+                                });
+                                let open = talents::row_open(info.row, spent) && prereq_ok;
+                                let mut tip = format!(
+                                    "{}  (rank {rank}/{})\n{}",
+                                    info.name,
+                                    info.max_rank,
+                                    talents::describe(&talents::effect_for(info, cid))
+                                );
+                                if !talents::row_open(info.row, spent) {
+                                    tip.push_str(&format!(
+                                        "\nRequires {} points in {}",
+                                        u32::from(info.row) * 5,
+                                        tree.name
+                                    ));
+                                }
+                                if let Some((pid, need)) = info.prereq.filter(|_| !prereq_ok) {
+                                    let pname = tree
+                                        .talents
+                                        .iter()
+                                        .find(|(t, _)| t.id == pid)
+                                        .map_or("another talent", |(t, _)| t.name.as_str());
+                                    tip.push_str(&format!("\nRequires {need} points in {pname}"));
+                                }
                                 let color = if rank == info.max_rank {
                                     hud::GOLD_TONE
                                 } else if rank > 0 {
@@ -506,14 +603,10 @@ pub(super) fn rebuild(
                                     Color::srgb(0.35, 0.35, 0.35)
                                 };
                                 g.spawn((
-                                    HeroAction::Learn {
-                                        id: info.id,
-                                        row: info.row,
-                                        max_rank: info.max_rank,
-                                        tree: ti,
-                                    },
+                                    HeroAction::Learn { id: info.id, tree: ti },
                                     Button,
                                     Interaction::default(),
+                                    Tip(tip),
                                     Node {
                                         grid_row: GridPlacement::start(i16::from(info.row) + 1),
                                         grid_column: GridPlacement::start(i16::from(info.col) + 1),
@@ -569,11 +662,15 @@ pub(super) fn rebuild(
             });
             for p in PERKS {
                 let rank = acc.perks.get(p.key).copied().unwrap_or(0);
-                c.spawn(Node {
-                    column_gap: Val::Px(10.0),
-                    align_items: AlignItems::Center,
-                    ..default()
-                })
+                c.spawn((
+                    Node {
+                        column_gap: Val::Px(10.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    Interaction::default(),
+                    Tip(format!("{}\n{}\nRank {rank} of {}, {} point(s) a rank", p.name, p.desc, p.ranks, p.cost)),
+                ))
                 .with_children(|row| {
                     row.spawn((icon_node(30.0), ImageNode::default(), SpellIcon(p.icon_spell)));
                     row.spawn((
@@ -660,6 +757,7 @@ pub(super) fn clicks(
     char_create: Option<Res<crate::entities::CharCreate>>,
     mut session: ResMut<Session>,
     mut net: ResMut<Net>,
+    mut rng: ResMut<super::Rng>,
 ) {
     let Some((_, action)) = actions.iter().find(|(e, _)| clicks.hit(*e)) else {
         return;
@@ -697,14 +795,30 @@ pub(super) fn clicks(
             progress.account.unequip(cid, slot);
             progress.changed();
         }
-        HeroAction::Learn { id, row, max_rank, tree } => {
+        HeroAction::Learn { id, tree } => {
             let Some(cid) = cid else { return };
-            let spent = book
-                .trees
-                .get(&cid)
-                .and_then(|t| t.get(tree))
-                .map_or(0, |t| t.spent(&progress.account, cid));
-            if progress.account.learn_talent(cid, id, row, max_rank, spent) {
+            let Some(t) = book.trees.get(&cid).and_then(|t| t.get(tree)) else {
+                return;
+            };
+            let spent = t.spent(&progress.account, cid);
+            let Some(info) = t.talents.iter().find(|(i, _)| i.id == id).map(|(i, _)| i.clone()) else {
+                return;
+            };
+            if progress.account.learn_talent(cid, &info, spent) {
+                progress.changed();
+            }
+        }
+        HeroAction::Enhance(item) => {
+            if progress.account.enhance(item) {
+                progress.changed();
+            }
+        }
+        HeroAction::OpenCache => {
+            let Some(cid) = cid else { return };
+            let mut dice = survivors_sim::Rng::seeded(rng.next_u64());
+            if let Some(item) = progress.account.open_cache(cid, &mut dice) {
+                let line = format!("From the cache: {}", item.name());
+                progress.toast(line);
                 progress.changed();
             }
         }
@@ -749,6 +863,61 @@ pub(super) fn card_tricks(
         for (i, k) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3].into_iter().enumerate() {
             if keys.just_pressed(k) {
                 session.banish(i, &mut net);
+            }
+        }
+    }
+}
+
+/// A piece's name, enhancement and stats, for its tooltip.
+fn item_tip(item: ItemKey, level: u8) -> String {
+    let plus = if level > 0 { format!(" +{level}") } else { String::new() };
+    let set = if item.slot.is_armour() {
+        "\nPart of a set: 2, 4 and 8 pieces add bonuses."
+    } else {
+        ""
+    };
+    format!(
+        "{}{plus}\n{}{set}\nEnhance: {}",
+        item.name(),
+        talents::stat_words(&gear::stats_at(item, level)),
+        if level >= gear::MAX_ENHANCE {
+            "fully enhanced".to_string()
+        } else {
+            format!("{} gold for +{}", gear::enhance_cost(item, level), level + 1)
+        }
+    )
+}
+
+/// The hovered node's tip, by the cursor.
+pub(super) fn tooltip(
+    hovered: Query<(&Interaction, &Tip)>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
+    mut tips: Query<(&mut Text, &mut Node), With<TipBox>>,
+) {
+    let Ok((mut text, mut node)) = tips.single_mut() else {
+        return;
+    };
+    let tip = hovered
+        .iter()
+        .find(|(i, _)| **i == Interaction::Hovered)
+        .map(|(_, t)| t.0.as_str());
+    let cursor = windows.single().ok().and_then(Window::cursor_position);
+    match (tip, cursor) {
+        (Some(tip), Some(at)) => {
+            if text.0 != tip {
+                text.0 = tip.to_string();
+            }
+            let s = ui_scale.0.max(0.01);
+            node.left = Val::Px(at.x / s + 16.0);
+            node.top = Val::Px(at.y / s + 12.0);
+            if node.display != Display::Flex {
+                node.display = Display::Flex;
+            }
+        }
+        _ => {
+            if node.display != Display::None {
+                node.display = Display::None;
             }
         }
     }

@@ -42,11 +42,10 @@ pub fn loadout(
     // Gear and its set bonuses.
     let mut gear = [0u32; GEAR_SLOTS];
     for (&slot, &item) in &cp.equipped {
-        stats.add(&gear::stats(item));
-        if let Some(s) = Slot::from_index(slot) {
-            if let Some(d) = display(item) {
-                gear[s.gear_index()] = d;
-            }
+        stats.add(&gear::stats_at(item, account.enhancement(item)));
+        let shown = Slot::from_index(slot).and_then(Slot::gear_index);
+        if let (Some(i), Some(d)) = (shown, display(item)) {
+            gear[i] = d;
         }
     }
     stats.add(&gear::set_bonus(cp.equipped.values().copied()));

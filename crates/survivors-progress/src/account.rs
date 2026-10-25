@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use survivors_sim::{Appearance, Rng};
 
-use crate::gear::{ItemKey, Slot, Tier, ARMOUR_SLOTS};
+use crate::gear::{self, ItemKey, Slot, Tier, ALL_SLOTS, TIERS};
+use crate::TalentInfo;
 use crate::{achievements, perks, talents};
 
 /// Lifetime totals across every run.
@@ -56,6 +57,9 @@ pub struct Account {
     pub perks: BTreeMap<String, u8>,
     pub achievements: BTreeSet<String>,
     pub lifetime: Lifetime,
+    /// Enhancement levels bought with gold.
+    #[serde(default)]
+    pub enhanced: Vec<(ItemKey, u8)>,
 }
 
 /// How a run went, for the account.
@@ -98,13 +102,16 @@ impl Account {
     /// A boss of battleground `map` fell: the piece `class` gets, a slot of that zone's set it
     /// does not own yet where there is one. Added to the collection.
     pub fn roll_drop(&mut self, class: u8, map: usize, rng: &mut Rng) -> ItemKey {
-        let tier = Tier::for_map(map);
-        let missing: Vec<Slot> = ARMOUR_SLOTS
+        self.roll_tier(class, Tier::for_map(map), rng)
+    }
+
+    fn roll_tier(&mut self, class: u8, tier: Tier, rng: &mut Rng) -> ItemKey {
+        let missing: Vec<Slot> = ALL_SLOTS
             .into_iter()
             .filter(|&slot| !self.collection.contains(&ItemKey { class, tier, slot }))
             .collect();
         let pool = if missing.is_empty() {
-            ARMOUR_SLOTS.to_vec()
+            ALL_SLOTS.to_vec()
         } else {
             missing
         };
@@ -132,16 +139,73 @@ impl Account {
         self.class(class).equipped.remove(&slot.index());
     }
 
-    /// Spend a point on talent `id` of a tree, if a point is free, the tier is open (`tree_spent`
-    /// points already in that tree) and the talent is not maxed.
-    pub fn learn_talent(&mut self, class: u8, id: u32, row: u8, max_rank: u8, tree_spent: u32) -> bool {
+    /// Spend a point on talent `t`, if a point is free, its tier is open (`tree_spent` points
+    /// already in its tree), its prerequisite has its ranks, and it is not maxed.
+    pub fn learn_talent(&mut self, class: u8, t: &TalentInfo, tree_spent: u32) -> bool {
         let cp = self.class(class);
-        let rank = cp.talents.get(&id).copied().unwrap_or(0);
-        if cp.talent_points_free() == 0 || rank >= max_rank || !talents::row_open(row, tree_spent) {
+        let rank = cp.talents.get(&t.id).copied().unwrap_or(0);
+        let prereq_ok = t
+            .prereq
+            .is_none_or(|(id, need)| cp.talents.get(&id).copied().unwrap_or(0) >= need);
+        if cp.talent_points_free() == 0
+            || rank >= t.max_rank
+            || !talents::row_open(t.row, tree_spent)
+            || !prereq_ok
+        {
             return false;
         }
-        cp.talents.insert(id, rank + 1);
+        cp.talents.insert(t.id, rank + 1);
         true
+    }
+
+    pub fn enhancement(&self, item: ItemKey) -> u8 {
+        self.enhanced
+            .iter()
+            .find(|(i, _)| *i == item)
+            .map_or(0, |(_, l)| *l)
+    }
+
+    /// Spend gold to raise an owned piece one enhancement level.
+    pub fn enhance(&mut self, item: ItemKey) -> bool {
+        let level = self.enhancement(item);
+        let cost = gear::enhance_cost(item, level);
+        if !self.collection.contains(&item) || level >= gear::MAX_ENHANCE || self.gold < cost {
+            return false;
+        }
+        self.gold -= cost;
+        match self.enhanced.iter_mut().find(|(i, _)| *i == item) {
+            Some(e) => e.1 += 1,
+            None => self.enhanced.push((item, 1)),
+        }
+        true
+    }
+
+    /// The best tier `class` has reached: the highest of any piece it owns.
+    pub fn best_tier(&self, class: u8) -> Tier {
+        self.collection
+            .iter()
+            .filter(|i| i.class == class)
+            .map(|i| i.tier)
+            .max()
+            .unwrap_or(Tier::Dungeon)
+    }
+
+    /// Gold for a sealed cache of `class`'s gear.
+    pub fn cache_cost(&self, class: u8) -> u64 {
+        (150.0 * self.best_tier(class).rank()) as u64
+    }
+
+    /// Buy a cache: a piece from any tier `class` has reached, missing ones first.
+    pub fn open_cache(&mut self, class: u8, rng: &mut Rng) -> Option<ItemKey> {
+        let cost = self.cache_cost(class);
+        if self.gold < cost {
+            return None;
+        }
+        self.gold -= cost;
+        let best = self.best_tier(class);
+        let tiers: Vec<Tier> = TIERS.into_iter().filter(|t| *t <= best).collect();
+        let tier = tiers[rng.index(tiers.len())];
+        Some(self.roll_tier(class, tier, rng))
     }
 
     /// Take every talent point back.
@@ -256,14 +320,20 @@ mod tests {
                 col: 0,
                 max_rank: if row == 6 { 1 } else { 5 },
                 teaches: row == 6,
+                prereq: (row == 6).then_some((105, 5)),
             })
             .collect();
         let mut spent = 0;
         for t in &infos {
-            while acc.learn_talent(8, t.id, t.row, t.max_rank, spent) {
+            while acc.learn_talent(8, t, spent) {
                 spent += 1;
             }
         }
+        // Gold buys enhancements and caches.
+        acc.gold += 5_000;
+        let worn = *acc.class(8).equipped.values().next().unwrap();
+        assert!(acc.enhance(worn) && acc.enhancement(worn) == 1);
+        assert!(acc.open_cache(8, &mut rng).is_some());
         while acc.buy_perk("honed") || acc.buy_perk("hardy") {}
         let lo = loadout(
             &acc,

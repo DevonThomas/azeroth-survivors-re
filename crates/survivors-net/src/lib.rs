@@ -17,7 +17,7 @@ pub use client::{Client, ClientError, Status};
 pub use hero::HeroState;
 
 /// Bumped on every incompatible change; a mismatch is refused at the handshake.
-pub const PROTOCOL_ID: u64 = 0x415A_5355_0000_0005;
+pub const PROTOCOL_ID: u64 = 0x415A_5355_0000_0006;
 pub const DEFAULT_PORT: u16 = 7777;
 /// The server steps every room this often…
 pub const TICK_HZ: u32 = 30;

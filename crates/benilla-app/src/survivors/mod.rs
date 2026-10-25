@@ -82,6 +82,7 @@ impl Plugin for SurvivorsPlugin {
                     hero_ui::card_tricks,
                     hero_ui::fill_item_icons,
                     hero_ui::refresh_overlay,
+                    hero_ui::tooltip,
                     progress::save,
                 )
                     .chain()
